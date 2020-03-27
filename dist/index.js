@@ -1817,7 +1817,9 @@ class DownloadHttpClient {
                     // Always read the body of the response. There is potential for a resource leak if the body is not read which will
                     // result in the connection remaining open along with unintended consequences when trying to dispose of the client
                     yield response.readBody();
+                    core_1.info('Done reading the response body');
                     if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
+                        core_1.info('starting success pipping');
                         yield this.pipeResponseToStream(response, stream, isGzip(response.message.headers));
                     }
                     else if (utils_1.isThrottledStatusCode(response.message.statusCode)) {
@@ -1855,6 +1857,7 @@ class DownloadHttpClient {
                     yield backoffExponentially();
                 }
             }
+            core_1.info('finishing up the individual download');
         });
     }
     /**
@@ -1866,6 +1869,7 @@ class DownloadHttpClient {
     pipeResponseToStream(response, stream, isGzip) {
         return __awaiter(this, void 0, void 0, function* () {
             return new Promise(resolve => {
+                core_1.info(`isGzip is set to ${isGzip}`);
                 if (isGzip) {
                     // pipe the response into gunzip to decompress
                     const gunzip = zlib.createGunzip();
@@ -1873,11 +1877,13 @@ class DownloadHttpClient {
                         .pipe(gunzip)
                         .pipe(stream)
                         .on('close', () => {
+                        core_1.info('done with gzip');
                         resolve();
                     });
                 }
                 else {
                     response.message.pipe(stream).on('close', () => {
+                        core_1.info('we are done!');
                         resolve();
                     });
                 }
