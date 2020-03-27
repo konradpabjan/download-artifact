@@ -1821,6 +1821,7 @@ class DownloadHttpClient {
                     if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
                         core_1.info('starting success pipping');
                         yield this.pipeResponseToStream(response, stream, isGzip(response.message.headers));
+                        return;
                     }
                     else if (utils_1.isThrottledStatusCode(response.message.statusCode)) {
                         core_1.info('A 429 response code has been recieved when attempting to download an artifact');
