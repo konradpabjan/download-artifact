@@ -1808,7 +1808,6 @@ class DownloadHttpClient {
                 core_1.info(`Backoff due to too many requests, retry #${retryCount}. Waiting for ${retryAfterValue} milliseconds before continuing the download`);
                 return new Promise(resolve => setTimeout(resolve, retryAfterValue));
             });
-            core_1.info(`Starting download for ${artifactLocation}, the downloadPath is ${downloadPath}`);
             while (retryCount <= retryLimit) {
                 try {
                     const response = yield makeDownloadRequest();
@@ -1816,7 +1815,6 @@ class DownloadHttpClient {
                     // result in the connection remaining open along with unintended consequences when trying to dispose of the client
                     yield response.readBody();
                     if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
-                        core_1.info('starting success pipping');
                         yield this.pipeResponseToStream(response, stream, isGzip(response.message.headers));
                         return;
                     }
@@ -1855,6 +1853,7 @@ class DownloadHttpClient {
                     yield backoffExponentially();
                 }
             }
+            throw new Error(`###ERROR### Unable to download ${artifactLocation} ###`);
         });
     }
     /**
