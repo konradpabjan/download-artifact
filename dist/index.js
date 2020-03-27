@@ -1811,13 +1811,10 @@ class DownloadHttpClient {
             core_1.info(`Starting download for ${artifactLocation}, the downloadPath is ${downloadPath}`);
             while (retryCount <= retryLimit) {
                 try {
-                    console.log(`retry count ${retryCount}, the limit is ${retryLimit}`);
                     const response = yield makeDownloadRequest();
-                    console.log(response);
                     // Always read the body of the response. There is potential for a resource leak if the body is not read which will
                     // result in the connection remaining open along with unintended consequences when trying to dispose of the client
                     yield response.readBody();
-                    core_1.info('Done reading the response body');
                     if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
                         core_1.info('starting success pipping');
                         yield this.pipeResponseToStream(response, stream, isGzip(response.message.headers));
@@ -1845,7 +1842,7 @@ class DownloadHttpClient {
                         // Some unexpected response code, fail immediatly and stop the download
                         // eslint-disable-next-line no-console
                         console.log(response);
-                        throw new Error(`###ERROR### Unexpected response. Unable to download ${artifactLocation} ###`);
+                        break;
                     }
                 }
                 catch (error) {
@@ -1858,7 +1855,6 @@ class DownloadHttpClient {
                     yield backoffExponentially();
                 }
             }
-            core_1.info('finishing up the individual download');
         });
     }
     /**
@@ -1870,7 +1866,6 @@ class DownloadHttpClient {
     pipeResponseToStream(response, stream, isGzip) {
         return __awaiter(this, void 0, void 0, function* () {
             return new Promise(resolve => {
-                core_1.info(`isGzip is set to ${isGzip}`);
                 if (isGzip) {
                     // pipe the response into gunzip to decompress
                     const gunzip = zlib.createGunzip();
@@ -1878,13 +1873,11 @@ class DownloadHttpClient {
                         .pipe(gunzip)
                         .pipe(stream)
                         .on('close', () => {
-                        core_1.info('done with gzip');
                         resolve();
                     });
                 }
                 else {
                     response.message.pipe(stream).on('close', () => {
-                        core_1.info('we are done!');
                         resolve();
                     });
                 }
