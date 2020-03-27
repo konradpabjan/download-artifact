@@ -1743,6 +1743,7 @@ class DownloadHttpClient {
         return __awaiter(this, void 0, void 0, function* () {
             const DOWNLOAD_CONCURRENCY = config_variables_1.getDownloadFileConcurrency();
             // limit the number of files downloaded at a single time
+            core_1.info(`Download file concurrency is set to ${DOWNLOAD_CONCURRENCY}`);
             const parallelDownloads = [...new Array(DOWNLOAD_CONCURRENCY).keys()];
             let currentFile = 0;
             let downloadedFiles = 0;
@@ -1807,9 +1808,12 @@ class DownloadHttpClient {
                 core_1.info(`Backoff due to too many requests, retry #${retryCount}. Waiting for ${retryAfterValue} milliseconds before continuing the download`);
                 return new Promise(resolve => setTimeout(resolve, retryAfterValue));
             });
+            core_1.info(`Starting download for ${artifactLocation}, the downloadPath is ${downloadPath}`);
             while (retryCount <= retryLimit) {
                 try {
+                    console.log(`retry count ${retryCount}, the limit is ${retryLimit}`);
                     const response = yield makeDownloadRequest();
+                    console.log(response);
                     // Always read the body of the response. There is potential for a resource leak if the body is not read which will
                     // result in the connection remaining open along with unintended consequences when trying to dispose of the client
                     yield response.readBody();
