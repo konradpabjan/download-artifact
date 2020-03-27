@@ -43,6 +43,14 @@ module.exports =
 /************************************************************************/
 /******/ ({
 
+/***/ 10:
+/***/ (function(module, __unusedexports, __webpack_require__) {
+
+module.exports = __webpack_require__(936);
+
+
+/***/ }),
+
 /***/ 16:
 /***/ (function(module) {
 
@@ -50,7 +58,1078 @@ module.exports = require("tls");
 
 /***/ }),
 
-/***/ 82:
+/***/ 34:
+/***/ (function(module) {
+
+module.exports = require("https");
+
+/***/ }),
+
+/***/ 87:
+/***/ (function(module) {
+
+module.exports = require("os");
+
+/***/ }),
+
+/***/ 88:
+/***/ (function(__unusedmodule, exports, __webpack_require__) {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", { value: true });
+const artifact_client_1 = __webpack_require__(231);
+/**
+ * Constructs an ArtifactClient
+ */
+function create() {
+    return artifact_client_1.DefaultArtifactClient.create();
+}
+exports.create = create;
+//# sourceMappingURL=artifact-client.js.map
+
+/***/ }),
+
+/***/ 100:
+/***/ (function(module, __unusedexports, __webpack_require__) {
+
+/*!
+ * Tmp
+ *
+ * Copyright (c) 2011-2017 KARASZI Istvan <github@spam.raszi.hu>
+ *
+ * MIT Licensed
+ */
+
+/*
+ * Module dependencies.
+ */
+const fs = __webpack_require__(747);
+const path = __webpack_require__(622);
+const crypto = __webpack_require__(417);
+const osTmpDir = __webpack_require__(685);
+const _c = process.binding('constants');
+
+/*
+ * The working inner variables.
+ */
+const
+  /**
+   * The temporary directory.
+   * @type {string}
+   */
+  tmpDir = osTmpDir(),
+
+  // the random characters to choose from
+  RANDOM_CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz',
+
+  TEMPLATE_PATTERN = /XXXXXX/,
+
+  DEFAULT_TRIES = 3,
+
+  CREATE_FLAGS = (_c.O_CREAT || _c.fs.O_CREAT) | (_c.O_EXCL || _c.fs.O_EXCL) | (_c.O_RDWR || _c.fs.O_RDWR),
+
+  EBADF = _c.EBADF || _c.os.errno.EBADF,
+  ENOENT = _c.ENOENT || _c.os.errno.ENOENT,
+
+  DIR_MODE = 448 /* 0o700 */,
+  FILE_MODE = 384 /* 0o600 */,
+
+  // this will hold the objects need to be removed on exit
+  _removeObjects = [];
+
+var
+  _gracefulCleanup = false,
+  _uncaughtException = false;
+
+/**
+ * Random name generator based on crypto.
+ * Adapted from http://blog.tompawlak.org/how-to-generate-random-values-nodejs-javascript
+ *
+ * @param {number} howMany
+ * @returns {string} the generated random name
+ * @private
+ */
+function _randomChars(howMany) {
+  var
+    value = [],
+    rnd = null;
+
+  // make sure that we do not fail because we ran out of entropy
+  try {
+    rnd = crypto.randomBytes(howMany);
+  } catch (e) {
+    rnd = crypto.pseudoRandomBytes(howMany);
+  }
+
+  for (var i = 0; i < howMany; i++) {
+    value.push(RANDOM_CHARS[rnd[i] % RANDOM_CHARS.length]);
+  }
+
+  return value.join('');
+}
+
+/**
+ * Checks whether the `obj` parameter is defined or not.
+ *
+ * @param {Object} obj
+ * @returns {boolean} true if the object is undefined
+ * @private
+ */
+function _isUndefined(obj) {
+  return typeof obj === 'undefined';
+}
+
+/**
+ * Parses the function arguments.
+ *
+ * This function helps to have optional arguments.
+ *
+ * @param {(Options|Function)} options
+ * @param {Function} callback
+ * @returns {Array} parsed arguments
+ * @private
+ */
+function _parseArguments(options, callback) {
+  if (typeof options == 'function') {
+    return [callback || {}, options];
+  }
+
+  if (_isUndefined(options)) {
+    return [{}, callback];
+  }
+
+  return [options, callback];
+}
+
+/**
+ * Generates a new temporary name.
+ *
+ * @param {Object} opts
+ * @returns {string} the new random name according to opts
+ * @private
+ */
+function _generateTmpName(opts) {
+  if (opts.name) {
+    return path.join(opts.dir || tmpDir, opts.name);
+  }
+
+  // mkstemps like template
+  if (opts.template) {
+    return opts.template.replace(TEMPLATE_PATTERN, _randomChars(6));
+  }
+
+  // prefix and postfix
+  const name = [
+    opts.prefix || 'tmp-',
+    process.pid,
+    _randomChars(12),
+    opts.postfix || ''
+  ].join('');
+
+  return path.join(opts.dir || tmpDir, name);
+}
+
+/**
+ * Gets a temporary file name.
+ *
+ * @param {(Options|tmpNameCallback)} options options or callback
+ * @param {?tmpNameCallback} callback the callback function
+ */
+function tmpName(options, callback) {
+  var
+    args = _parseArguments(options, callback),
+    opts = args[0],
+    cb = args[1],
+    tries = opts.name ? 1 : opts.tries || DEFAULT_TRIES;
+
+  if (isNaN(tries) || tries < 0)
+    return cb(new Error('Invalid tries'));
+
+  if (opts.template && !opts.template.match(TEMPLATE_PATTERN))
+    return cb(new Error('Invalid template provided'));
+
+  (function _getUniqueName() {
+    const name = _generateTmpName(opts);
+
+    // check whether the path exists then retry if needed
+    fs.stat(name, function (err) {
+      if (!err) {
+        if (tries-- > 0) return _getUniqueName();
+
+        return cb(new Error('Could not get a unique tmp filename, max tries reached ' + name));
+      }
+
+      cb(null, name);
+    });
+  }());
+}
+
+/**
+ * Synchronous version of tmpName.
+ *
+ * @param {Object} options
+ * @returns {string} the generated random name
+ * @throws {Error} if the options are invalid or could not generate a filename
+ */
+function tmpNameSync(options) {
+  var
+    args = _parseArguments(options),
+    opts = args[0],
+    tries = opts.name ? 1 : opts.tries || DEFAULT_TRIES;
+
+  if (isNaN(tries) || tries < 0)
+    throw new Error('Invalid tries');
+
+  if (opts.template && !opts.template.match(TEMPLATE_PATTERN))
+    throw new Error('Invalid template provided');
+
+  do {
+    const name = _generateTmpName(opts);
+    try {
+      fs.statSync(name);
+    } catch (e) {
+      return name;
+    }
+  } while (tries-- > 0);
+
+  throw new Error('Could not get a unique tmp filename, max tries reached');
+}
+
+/**
+ * Creates and opens a temporary file.
+ *
+ * @param {(Options|fileCallback)} options the config options or the callback function
+ * @param {?fileCallback} callback
+ */
+function file(options, callback) {
+  var
+    args = _parseArguments(options, callback),
+    opts = args[0],
+    cb = args[1];
+
+  opts.postfix = (_isUndefined(opts.postfix)) ? '.tmp' : opts.postfix;
+
+  // gets a temporary filename
+  tmpName(opts, function _tmpNameCreated(err, name) {
+    if (err) return cb(err);
+
+    // create and open the file
+    fs.open(name, CREATE_FLAGS, opts.mode || FILE_MODE, function _fileCreated(err, fd) {
+      if (err) return cb(err);
+
+      if (opts.discardDescriptor) {
+        return fs.close(fd, function _discardCallback(err) {
+          if (err) {
+            // Low probability, and the file exists, so this could be
+            // ignored.  If it isn't we certainly need to unlink the
+            // file, and if that fails too its error is more
+            // important.
+            try {
+              fs.unlinkSync(name);
+            } catch (e) {
+              if (!isENOENT(e)) {
+                err = e;
+              }
+            }
+            return cb(err);
+          }
+          cb(null, name, undefined, _prepareTmpFileRemoveCallback(name, -1, opts));
+        });
+      }
+      if (opts.detachDescriptor) {
+        return cb(null, name, fd, _prepareTmpFileRemoveCallback(name, -1, opts));
+      }
+      cb(null, name, fd, _prepareTmpFileRemoveCallback(name, fd, opts));
+    });
+  });
+}
+
+/**
+ * Synchronous version of file.
+ *
+ * @param {Options} options
+ * @returns {FileSyncObject} object consists of name, fd and removeCallback
+ * @throws {Error} if cannot create a file
+ */
+function fileSync(options) {
+  var
+    args = _parseArguments(options),
+    opts = args[0];
+
+  opts.postfix = opts.postfix || '.tmp';
+
+  const discardOrDetachDescriptor = opts.discardDescriptor || opts.detachDescriptor;
+  const name = tmpNameSync(opts);
+  var fd = fs.openSync(name, CREATE_FLAGS, opts.mode || FILE_MODE);
+  if (opts.discardDescriptor) {
+    fs.closeSync(fd); 
+    fd = undefined;
+  }
+
+  return {
+    name: name,
+    fd: fd,
+    removeCallback: _prepareTmpFileRemoveCallback(name, discardOrDetachDescriptor ? -1 : fd, opts)
+  };
+}
+
+/**
+ * Removes files and folders in a directory recursively.
+ *
+ * @param {string} root
+ * @private
+ */
+function _rmdirRecursiveSync(root) {
+  const dirs = [root];
+
+  do {
+    var
+      dir = dirs.pop(),
+      deferred = false,
+      files = fs.readdirSync(dir);
+
+    for (var i = 0, length = files.length; i < length; i++) {
+      var
+        file = path.join(dir, files[i]),
+        stat = fs.lstatSync(file); // lstat so we don't recurse into symlinked directories
+
+      if (stat.isDirectory()) {
+        if (!deferred) {
+          deferred = true;
+          dirs.push(dir);
+        }
+        dirs.push(file);
+      } else {
+        fs.unlinkSync(file);
+      }
+    }
+
+    if (!deferred) {
+      fs.rmdirSync(dir);
+    }
+  } while (dirs.length !== 0);
+}
+
+/**
+ * Creates a temporary directory.
+ *
+ * @param {(Options|dirCallback)} options the options or the callback function
+ * @param {?dirCallback} callback
+ */
+function dir(options, callback) {
+  var
+    args = _parseArguments(options, callback),
+    opts = args[0],
+    cb = args[1];
+
+  // gets a temporary filename
+  tmpName(opts, function _tmpNameCreated(err, name) {
+    if (err) return cb(err);
+
+    // create the directory
+    fs.mkdir(name, opts.mode || DIR_MODE, function _dirCreated(err) {
+      if (err) return cb(err);
+
+      cb(null, name, _prepareTmpDirRemoveCallback(name, opts));
+    });
+  });
+}
+
+/**
+ * Synchronous version of dir.
+ *
+ * @param {Options} options
+ * @returns {DirSyncObject} object consists of name and removeCallback
+ * @throws {Error} if it cannot create a directory
+ */
+function dirSync(options) {
+  var
+    args = _parseArguments(options),
+    opts = args[0];
+
+  const name = tmpNameSync(opts);
+  fs.mkdirSync(name, opts.mode || DIR_MODE);
+
+  return {
+    name: name,
+    removeCallback: _prepareTmpDirRemoveCallback(name, opts)
+  };
+}
+
+/**
+ * Prepares the callback for removal of the temporary file.
+ *
+ * @param {string} name the path of the file
+ * @param {number} fd file descriptor
+ * @param {Object} opts
+ * @returns {fileCallback}
+ * @private
+ */
+function _prepareTmpFileRemoveCallback(name, fd, opts) {
+  const removeCallback = _prepareRemoveCallback(function _removeCallback(fdPath) {
+    try {
+      if (0 <= fdPath[0]) {
+        fs.closeSync(fdPath[0]);
+      }
+    }
+    catch (e) {
+      // under some node/windows related circumstances, a temporary file
+      // may have not be created as expected or the file was already closed
+      // by the user, in which case we will simply ignore the error
+      if (!isEBADF(e) && !isENOENT(e)) {
+        // reraise any unanticipated error
+        throw e;
+      }
+    }
+    try {
+      fs.unlinkSync(fdPath[1]);
+    }
+    catch (e) {
+      if (!isENOENT(e)) {
+        // reraise any unanticipated error
+        throw e;
+      }
+    }
+  }, [fd, name]);
+
+  if (!opts.keep) {
+    _removeObjects.unshift(removeCallback);
+  }
+
+  return removeCallback;
+}
+
+/**
+ * Prepares the callback for removal of the temporary directory.
+ *
+ * @param {string} name
+ * @param {Object} opts
+ * @returns {Function} the callback
+ * @private
+ */
+function _prepareTmpDirRemoveCallback(name, opts) {
+  const removeFunction = opts.unsafeCleanup ? _rmdirRecursiveSync : fs.rmdirSync.bind(fs);
+  const removeCallback = _prepareRemoveCallback(removeFunction, name);
+
+  if (!opts.keep) {
+    _removeObjects.unshift(removeCallback);
+  }
+
+  return removeCallback;
+}
+
+/**
+ * Creates a guarded function wrapping the removeFunction call.
+ *
+ * @param {Function} removeFunction
+ * @param {Object} arg
+ * @returns {Function}
+ * @private
+ */
+function _prepareRemoveCallback(removeFunction, arg) {
+  var called = false;
+
+  return function _cleanupCallback(next) {
+    if (!called) {
+      const index = _removeObjects.indexOf(_cleanupCallback);
+      if (index >= 0) {
+        _removeObjects.splice(index, 1);
+      }
+
+      called = true;
+      removeFunction(arg);
+    }
+
+    if (next) next(null);
+  };
+}
+
+/**
+ * The garbage collector.
+ *
+ * @private
+ */
+function _garbageCollector() {
+  if (_uncaughtException && !_gracefulCleanup) {
+    return;
+  }
+
+  // the function being called removes itself from _removeObjects,
+  // loop until _removeObjects is empty
+  while (_removeObjects.length) {
+    try {
+      _removeObjects[0].call(null);
+    } catch (e) {
+      // already removed?
+    }
+  }
+}
+
+/**
+ * Helper for testing against EBADF to compensate changes made to Node 7.x under Windows.
+ */
+function isEBADF(error) {
+  return isExpectedError(error, -EBADF, 'EBADF');
+}
+
+/**
+ * Helper for testing against ENOENT to compensate changes made to Node 7.x under Windows.
+ */
+function isENOENT(error) {
+  return isExpectedError(error, -ENOENT, 'ENOENT');
+}
+
+/**
+ * Helper to determine whether the expected error code matches the actual code and errno,
+ * which will differ between the supported node versions.
+ *
+ * - Node >= 7.0:
+ *   error.code {String}
+ *   error.errno {String|Number} any numerical value will be negated
+ *
+ * - Node >= 6.0 < 7.0:
+ *   error.code {String}
+ *   error.errno {Number} negated
+ *
+ * - Node >= 4.0 < 6.0: introduces SystemError
+ *   error.code {String}
+ *   error.errno {Number} negated
+ *
+ * - Node >= 0.10 < 4.0:
+ *   error.code {Number} negated
+ *   error.errno n/a
+ */
+function isExpectedError(error, code, errno) {
+  return error.code == code || error.code == errno;
+}
+
+/**
+ * Sets the graceful cleanup.
+ *
+ * Also removes the created files and directories when an uncaught exception occurs.
+ */
+function setGracefulCleanup() {
+  _gracefulCleanup = true;
+}
+
+const version = process.versions.node.split('.').map(function (value) {
+  return parseInt(value, 10);
+});
+
+if (version[0] === 0 && (version[1] < 9 || version[1] === 9 && version[2] < 5)) {
+  process.addListener('uncaughtException', function _uncaughtExceptionThrown(err) {
+    _uncaughtException = true;
+    _garbageCollector();
+
+    throw err;
+  });
+}
+
+process.addListener('exit', function _exit(code) {
+  if (code) _uncaughtException = true;
+  _garbageCollector();
+});
+
+/**
+ * Configuration options.
+ *
+ * @typedef {Object} Options
+ * @property {?number} tries the number of tries before give up the name generation
+ * @property {?string} template the "mkstemp" like filename template
+ * @property {?string} name fix name
+ * @property {?string} dir the tmp directory to use
+ * @property {?string} prefix prefix for the generated name
+ * @property {?string} postfix postfix for the generated name
+ */
+
+/**
+ * @typedef {Object} FileSyncObject
+ * @property {string} name the name of the file
+ * @property {string} fd the file descriptor
+ * @property {fileCallback} removeCallback the callback function to remove the file
+ */
+
+/**
+ * @typedef {Object} DirSyncObject
+ * @property {string} name the name of the directory
+ * @property {fileCallback} removeCallback the callback function to remove the directory
+ */
+
+/**
+ * @callback tmpNameCallback
+ * @param {?Error} err the error object if anything goes wrong
+ * @param {string} name the temporary file name
+ */
+
+/**
+ * @callback fileCallback
+ * @param {?Error} err the error object if anything goes wrong
+ * @param {string} name the temporary file name
+ * @param {number} fd the file descriptor
+ * @param {cleanupCallback} fn the cleanup callback function
+ */
+
+/**
+ * @callback dirCallback
+ * @param {?Error} err the error object if anything goes wrong
+ * @param {string} name the temporary file name
+ * @param {cleanupCallback} fn the cleanup callback function
+ */
+
+/**
+ * Removes the temporary created file or directory.
+ *
+ * @callback cleanupCallback
+ * @param {simpleCallback} [next] function to call after entry was removed
+ */
+
+/**
+ * Callback function for function composition.
+ * @see {@link https://github.com/raszi/node-tmp/issues/57|raszi/node-tmp#57}
+ *
+ * @callback simpleCallback
+ */
+
+// exporting all the needed methods
+module.exports.tmpdir = tmpDir;
+
+module.exports.dir = dir;
+module.exports.dirSync = dirSync;
+
+module.exports.file = file;
+module.exports.fileSync = fileSync;
+
+module.exports.tmpName = tmpName;
+module.exports.tmpNameSync = tmpNameSync;
+
+module.exports.setGracefulCleanup = setGracefulCleanup;
+
+
+/***/ }),
+
+/***/ 114:
+/***/ (function(__unusedmodule, exports, __webpack_require__) {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", { value: true });
+const utils_1 = __webpack_require__(844);
+/**
+ * Used for managing http clients during either upload or download
+ */
+class HttpManager {
+    constructor(clientCount) {
+        if (clientCount < 1) {
+            throw new Error('There must be at least one client');
+        }
+        this.clients = new Array(clientCount).fill(utils_1.createHttpClient());
+    }
+    getClient(index) {
+        return this.clients[index];
+    }
+    // client disposal is necessary if a keep-alive connection is used to properly close the connection
+    // for more information see: https://github.com/actions/http-client/blob/04e5ad73cd3fd1f5610a32116b0759eddf6570d2/index.ts#L292
+    disposeAndReplaceClient(index) {
+        this.clients[index].dispose();
+        this.clients[index] = utils_1.createHttpClient();
+    }
+    disposeAndReplaceAllClients() {
+        for (const [index] of this.clients.entries()) {
+            this.disposeAndReplaceClient(index);
+        }
+    }
+}
+exports.HttpManager = HttpManager;
+//# sourceMappingURL=http-manager.js.map
+
+/***/ }),
+
+/***/ 142:
+/***/ (function(__unusedmodule, exports, __webpack_require__) {
+
+"use strict";
+
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (Object.hasOwnProperty.call(mod, k)) result[k] = mod[k];
+    result["default"] = mod;
+    return result;
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const fs = __importStar(__webpack_require__(747));
+const tmp = __importStar(__webpack_require__(466));
+const stream = __importStar(__webpack_require__(413));
+const utils_1 = __webpack_require__(844);
+const config_variables_1 = __webpack_require__(706);
+const util_1 = __webpack_require__(669);
+const url_1 = __webpack_require__(835);
+const perf_hooks_1 = __webpack_require__(630);
+const status_reporter_1 = __webpack_require__(974);
+const core_1 = __webpack_require__(211);
+const http_manager_1 = __webpack_require__(114);
+const upload_gzip_1 = __webpack_require__(636);
+const stat = util_1.promisify(fs.stat);
+class UploadHttpClient {
+    constructor() {
+        this.uploadHttpManager = new http_manager_1.HttpManager(config_variables_1.getUploadFileConcurrency());
+        this.statusReporter = new status_reporter_1.StatusReporter();
+    }
+    /**
+     * Creates a file container for the new artifact in the remote blob storage/file service
+     * @param {string} artifactName Name of the artifact being created
+     * @returns The response from the Artifact Service if the file container was successfully created
+     */
+    createArtifactInFileContainer(artifactName) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const parameters = {
+                Type: 'actions_storage',
+                Name: artifactName
+            };
+            const data = JSON.stringify(parameters, null, 2);
+            const artifactUrl = utils_1.getArtifactUrl();
+            // use the first client from the httpManager, `keep-alive` is not used so the connection will close immediatly
+            const client = this.uploadHttpManager.getClient(0);
+            const requestOptions = utils_1.getRequestOptions('application/json', false, false);
+            const rawResponse = yield client.post(artifactUrl, data, requestOptions);
+            const body = yield rawResponse.readBody();
+            if (utils_1.isSuccessStatusCode(rawResponse.message.statusCode) && body) {
+                return JSON.parse(body);
+            }
+            else {
+                // eslint-disable-next-line no-console
+                console.log(rawResponse);
+                throw new Error(`Unable to create a container for the artifact ${artifactName}`);
+            }
+        });
+    }
+    /**
+     * Concurrently upload all of the files in chunks
+     * @param {string} uploadUrl Base Url for the artifact that was created
+     * @param {SearchResult[]} filesToUpload A list of information about the files being uploaded
+     * @returns The size of all the files uploaded in bytes
+     */
+    uploadArtifactToFileContainer(uploadUrl, filesToUpload, options) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const FILE_CONCURRENCY = config_variables_1.getUploadFileConcurrency();
+            const MAX_CHUNK_SIZE = config_variables_1.getUploadChunkSize();
+            core_1.debug(`File Concurrency: ${FILE_CONCURRENCY}, and Chunk Size: ${MAX_CHUNK_SIZE}`);
+            const parameters = [];
+            // by default, file uploads will continue if there is an error unless specified differently in the options
+            let continueOnError = true;
+            if (options) {
+                if (options.continueOnError === false) {
+                    continueOnError = false;
+                }
+            }
+            // prepare the necessary parameters to upload all the files
+            for (const file of filesToUpload) {
+                const resourceUrl = new url_1.URL(uploadUrl);
+                resourceUrl.searchParams.append('itemPath', file.uploadFilePath);
+                parameters.push({
+                    file: file.absoluteFilePath,
+                    resourceUrl: resourceUrl.toString(),
+                    maxChunkSize: MAX_CHUNK_SIZE,
+                    continueOnError
+                });
+            }
+            const parallelUploads = [...new Array(FILE_CONCURRENCY).keys()];
+            const failedItemsToReport = [];
+            let currentFile = 0;
+            let completedFiles = 0;
+            let uploadFileSize = 0;
+            let totalFileSize = 0;
+            let abortPendingFileUploads = false;
+            this.statusReporter.setTotalNumberOfFilesToProcess(filesToUpload.length);
+            this.statusReporter.start();
+            // only allow a certain amount of files to be uploaded at once, this is done to reduce potential errors
+            yield Promise.all(parallelUploads.map((index) => __awaiter(this, void 0, void 0, function* () {
+                while (currentFile < filesToUpload.length) {
+                    const currentFileParameters = parameters[currentFile];
+                    currentFile += 1;
+                    if (abortPendingFileUploads) {
+                        failedItemsToReport.push(currentFileParameters.file);
+                        continue;
+                    }
+                    const startTime = perf_hooks_1.performance.now();
+                    const uploadFileResult = yield this.uploadFileAsync(index, currentFileParameters);
+                    core_1.debug(`File: ${++completedFiles}/${filesToUpload.length}. ${currentFileParameters.file} took ${(perf_hooks_1.performance.now() - startTime).toFixed(3)} milliseconds to finish upload`);
+                    uploadFileSize += uploadFileResult.successfullUploadSize;
+                    totalFileSize += uploadFileResult.totalSize;
+                    if (uploadFileResult.isSuccess === false) {
+                        failedItemsToReport.push(currentFileParameters.file);
+                        if (!continueOnError) {
+                            // existing uploads will be able to finish however all pending uploads will fail fast
+                            abortPendingFileUploads = true;
+                        }
+                    }
+                    this.statusReporter.incrementProcessedCount();
+                }
+            })));
+            this.statusReporter.stop();
+            // done uploading, safety dispose all connections
+            this.uploadHttpManager.disposeAndReplaceAllClients();
+            core_1.info(`Total size of all the files uploaded is ${uploadFileSize} bytes`);
+            return {
+                uploadSize: uploadFileSize,
+                totalSize: totalFileSize,
+                failedItems: failedItemsToReport
+            };
+        });
+    }
+    /**
+     * Asynchronously uploads a file. The file is compressed and uploaded using GZip if it is determined to save space.
+     * If the upload file is bigger than the max chunk size it will be uploaded via multiple calls
+     * @param {number} httpClientIndex The index of the httpClient that is being used to make all of the calls
+     * @param {UploadFileParameters} parameters Information about the file that needs to be uploaded
+     * @returns The size of the file that was uploaded in bytes along with any failed uploads
+     */
+    uploadFileAsync(httpClientIndex, parameters) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const totalFileSize = (yield stat(parameters.file)).size;
+            let offset = 0;
+            let isUploadSuccessful = true;
+            let failedChunkSizes = 0;
+            let uploadFileSize = 0;
+            let isGzip = true;
+            // the file that is being uploaded is less than 64k in size, to increase thoroughput and to minimize disk I/O
+            // for creating a new GZip file, an in-memory buffer is used for compression
+            if (totalFileSize < 65536) {
+                const buffer = yield upload_gzip_1.createGZipFileInBuffer(parameters.file);
+                let uploadStream;
+                if (totalFileSize < buffer.byteLength) {
+                    // compression did not help with reducing the size, use a readable stream from the original file for upload
+                    uploadStream = fs.createReadStream(parameters.file);
+                    isGzip = false;
+                    uploadFileSize = totalFileSize;
+                }
+                else {
+                    // create a readable stream using a PassThrough stream that is both readable and writable
+                    const passThrough = new stream.PassThrough();
+                    passThrough.end(buffer);
+                    uploadStream = passThrough;
+                    uploadFileSize = buffer.byteLength;
+                }
+                const result = yield this.uploadChunk(httpClientIndex, parameters.resourceUrl, uploadStream, 0, uploadFileSize - 1, uploadFileSize, isGzip, totalFileSize);
+                if (!result) {
+                    // chunk failed to upload
+                    isUploadSuccessful = false;
+                    failedChunkSizes += uploadFileSize;
+                    core_1.warning(`Aborting upload for ${parameters.file} due to failure`);
+                }
+                return {
+                    isSuccess: isUploadSuccessful,
+                    successfullUploadSize: uploadFileSize - failedChunkSizes,
+                    totalSize: totalFileSize
+                };
+            }
+            else {
+                // the file that is being uploaded is greater than 64k in size, a temprorary file gets created on disk using the
+                // npm tmp-promise package and this file gets used during compression for the GZip file that gets created
+                return tmp
+                    .file()
+                    .then((tmpFile) => __awaiter(this, void 0, void 0, function* () {
+                    // create a GZip file of the original file being uploaded, the original file should not be modified in any way
+                    uploadFileSize = yield upload_gzip_1.createGZipFileOnDisk(parameters.file, tmpFile.path);
+                    let uploadFilePath = tmpFile.path;
+                    // compression did not help with size reduction, use the original file for upload and delete the temp GZip file
+                    if (totalFileSize < uploadFileSize) {
+                        uploadFileSize = totalFileSize;
+                        uploadFilePath = parameters.file;
+                        isGzip = false;
+                        tmpFile.cleanup();
+                    }
+                    let abortFileUpload = false;
+                    // upload only a single chunk at a time
+                    while (offset < uploadFileSize) {
+                        const chunkSize = Math.min(uploadFileSize - offset, parameters.maxChunkSize);
+                        if (abortFileUpload) {
+                            // if we don't want to continue in the event of an error, any pending upload chunks will be marked as failed
+                            failedChunkSizes += chunkSize;
+                            continue;
+                        }
+                        // if an individual file is greater than 100MB (1024*1024*100) in size, display extra information about the upload status
+                        if (uploadFileSize > 104857600) {
+                            this.statusReporter.updateLargeFileStatus(parameters.file, offset, uploadFileSize);
+                        }
+                        const start = offset;
+                        const end = offset + chunkSize - 1;
+                        offset += parameters.maxChunkSize;
+                        const result = yield this.uploadChunk(httpClientIndex, parameters.resourceUrl, fs.createReadStream(uploadFilePath, {
+                            start,
+                            end,
+                            autoClose: false
+                        }), start, end, uploadFileSize, isGzip, totalFileSize);
+                        if (!result) {
+                            // Chunk failed to upload, report as failed and do not continue uploading any more chunks for the file. It is possible that part of a chunk was
+                            // successfully uploaded so the server may report a different size for what was uploaded
+                            isUploadSuccessful = false;
+                            failedChunkSizes += chunkSize;
+                            core_1.warning(`Aborting upload for ${parameters.file} due to failure`);
+                            abortFileUpload = true;
+                        }
+                    }
+                }))
+                    .then(() => __awaiter(this, void 0, void 0, function* () {
+                    // only after the file upload is complete and the temporary file is deleted, return the UploadResult
+                    return new Promise(resolve => {
+                        resolve({
+                            isSuccess: isUploadSuccessful,
+                            successfullUploadSize: uploadFileSize - failedChunkSizes,
+                            totalSize: totalFileSize
+                        });
+                    });
+                }));
+            }
+        });
+    }
+    /**
+     * Uploads a chunk of an individual file to the specified resourceUrl. If the upload fails and the status code
+     * indicates a retryable status, we try to upload the chunk as well
+     * @param {number} httpClientIndex The index of the httpClient being used to make all the necessary calls
+     * @param {string} resourceUrl Url of the resource that the chunk will be uploaded to
+     * @param {NodeJS.ReadableStream} data Stream of the file that will be uploaded
+     * @param {number} start Starting byte index of file that the chunk belongs to
+     * @param {number} end Ending byte index of file that the chunk belongs to
+     * @param {number} uploadFileSize Total size of the file in bytes that is being uploaded
+     * @param {boolean} isGzip Denotes if we are uploading a Gzip compressed stream
+     * @param {number} totalFileSize Original total size of the file that is being uploaded
+     * @returns if the chunk was successfully uploaded
+     */
+    uploadChunk(httpClientIndex, resourceUrl, data, start, end, uploadFileSize, isGzip, totalFileSize) {
+        return __awaiter(this, void 0, void 0, function* () {
+            // prepare all the necessary headers before making any http call
+            const requestOptions = utils_1.getRequestOptions('application/octet-stream', true, isGzip, totalFileSize, end - start + 1, utils_1.getContentRange(start, end, uploadFileSize));
+            const uploadChunkRequest = () => __awaiter(this, void 0, void 0, function* () {
+                const client = this.uploadHttpManager.getClient(httpClientIndex);
+                return yield client.sendStream('PUT', resourceUrl, data, requestOptions);
+            });
+            let retryCount = 0;
+            const retryLimit = config_variables_1.getRetryLimit();
+            // checks if the retry limit has been reached
+            const isRetryLimitExceeded = (message) => {
+                if (retryCount > retryLimit) {
+                    if (message) {
+                        // eslint-disable-next-line no-console
+                        console.log(message);
+                    }
+                    core_1.info(`Retry limit has been reached for chunk at offset ${start} to ${resourceUrl}`);
+                    return true;
+                }
+                return false;
+            };
+            // back off exponentially based off of the retry count.
+            const backoffExponentially = () => __awaiter(this, void 0, void 0, function* () {
+                this.uploadHttpManager.disposeAndReplaceClient(httpClientIndex);
+                const backoffTime = utils_1.getExponentialRetryTimeInMilliseconds(retryCount);
+                core_1.info(`Exponential backoff for retry #${retryCount}. Waiting for ${backoffTime} milliseconds before continuing the upload at chunk ${start}`);
+                return new Promise(resolve => setTimeout(resolve, utils_1.getExponentialRetryTimeInMilliseconds(retryCount)));
+            });
+            const backOffUsingRetryValue = (retryAfterValue) => __awaiter(this, void 0, void 0, function* () {
+                this.uploadHttpManager.disposeAndReplaceClient(httpClientIndex);
+                core_1.info(`Backoff due to too many requests, retry #${retryCount}. Waiting for ${retryAfterValue} milliseconds before continuing the upload`);
+                return new Promise(resolve => setTimeout(resolve, retryAfterValue));
+            });
+            // allow for failed chunks to be retried multiple times
+            while (retryCount <= retryLimit) {
+                try {
+                    const response = yield uploadChunkRequest();
+                    // Always read the body of the response. There is potential for a resource leak if the body is not read which will
+                    // result in the connection remaining open along with unintended consequences when trying to dispose of the client
+                    yield response.readBody();
+                    if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
+                        return true;
+                    }
+                    else if (utils_1.isThrottledStatusCode(response.message.statusCode)) {
+                        core_1.info('A 429 response code has been recieved when attempting to download an artifact');
+                        const retryAfterValue = utils_1.tryGetRetryAfterValueTimeInMilliseconds(response.message.headers);
+                        if (retryAfterValue) {
+                            yield backOffUsingRetryValue(retryAfterValue);
+                        }
+                        else {
+                            // no retry time available, differ to standard exponential backoff
+                            retryCount++;
+                            if (isRetryLimitExceeded(response)) {
+                                return false;
+                            }
+                            yield backoffExponentially();
+                        }
+                    }
+                    else if (utils_1.isRetryableStatusCode(response.message.statusCode)) {
+                        retryCount++;
+                        if (isRetryLimitExceeded(response)) {
+                            return false;
+                        }
+                        yield backoffExponentially();
+                    }
+                    else {
+                        core_1.info(`###ERROR### Unexpected response. Unable to upload chunk to ${resourceUrl}`);
+                        // eslint-disable-next-line no-console
+                        console.log(response);
+                        return false;
+                    }
+                }
+                catch (error) {
+                    // if an error is catched, it is usually indicative of a timeout so retry the upload
+                    core_1.info('An error has been caught, retrying the upload');
+                    // eslint-disable-next-line no-console
+                    console.log(error);
+                    retryCount++;
+                    if (isRetryLimitExceeded()) {
+                        return false;
+                    }
+                    yield backoffExponentially();
+                }
+            }
+            return false;
+        });
+    }
+    /**
+     * Updates the size of the artifact from -1 which was initially set when the container was first created for the artifact.
+     * Updating the size indicates that we are done uploading all the contents of the artifact
+     */
+    patchArtifactSize(size, artifactName) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const requestOptions = utils_1.getRequestOptions('application/json', false, false);
+            const resourceUrl = new url_1.URL(utils_1.getArtifactUrl());
+            resourceUrl.searchParams.append('artifactName', artifactName);
+            const parameters = { Size: size };
+            const data = JSON.stringify(parameters, null, 2);
+            core_1.debug(`URL is ${resourceUrl.toString()}`);
+            // use the first client from the httpManager, `keep-alive` is not used so the connection will close immediatly
+            const client = this.uploadHttpManager.getClient(0);
+            const rawResponse = yield client.patch(resourceUrl.toString(), data, requestOptions);
+            const body = yield rawResponse.readBody();
+            if (utils_1.isSuccessStatusCode(rawResponse.message.statusCode)) {
+                core_1.debug(`Artifact ${artifactName} has been successfully uploaded, total size ${size}`);
+            }
+            else if (rawResponse.message.statusCode === 404) {
+                throw new Error(`An Artifact with the name ${artifactName} was not found`);
+            }
+            else {
+                // eslint-disable-next-line no-console
+                console.log(body);
+                throw new Error(`Unable to finish uploading artifact ${artifactName}`);
+            }
+        });
+    }
+}
+exports.UploadHttpClient = UploadHttpClient;
+//# sourceMappingURL=upload-http-client.js.map
+
+/***/ }),
+
+/***/ 155:
 /***/ (function(__unusedmodule, exports, __webpack_require__) {
 
 "use strict";
@@ -64,9 +1143,9 @@ var __importStar = (this && this.__importStar) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const fs = __importStar(__webpack_require__(747));
-const core_1 = __webpack_require__(470);
+const core_1 = __webpack_require__(211);
 const path_1 = __webpack_require__(622);
-const internal_utils_1 = __webpack_require__(931);
+const utils_1 = __webpack_require__(844);
 /**
  * Creates a specification that describes how each file that is part of the artifact will be uploaded
  * @param artifactName the name of the artifact being uploaded. Used during upload to denote where the artifact is stored on the server
@@ -74,7 +1153,7 @@ const internal_utils_1 = __webpack_require__(931);
  * @param artifactFiles a list of absolute file paths that denote what should be uploaded as part of the artifact
  */
 function getUploadSpecification(artifactName, rootDirectory, artifactFiles) {
-    internal_utils_1.checkArtifactName(artifactName);
+    utils_1.checkArtifactName(artifactName);
     const specifications = [];
     if (!fs.existsSync(rootDirectory)) {
         throw new Error(`Provided rootDirectory ${rootDirectory} does not exist`);
@@ -115,6 +1194,9 @@ function getUploadSpecification(artifactName, rootDirectory, artifactFiles) {
             if (!file.startsWith(rootDirectory)) {
                 throw new Error(`The rootDirectory: ${rootDirectory} is not a parent directory of the file: ${file}`);
             }
+            // Check for forbidden characters in file paths that will be rejected during upload
+            const uploadPath = file.replace(rootDirectory, '');
+            utils_1.checkArtifactFilePath(uploadPath);
             /*
               uploadFilePath denotes where the file will be uploaded in the file container on the server. During a run, if multiple artifacts are uploaded, they will all
               be saved in the same container. The artifact name is used as the root directory in the container to separate and distinguish uploaded artifacts
@@ -127,7 +1209,7 @@ function getUploadSpecification(artifactName, rootDirectory, artifactFiles) {
             */
             specifications.push({
                 absoluteFilePath: file,
-                uploadFilePath: path_1.join(artifactName, file.replace(rootDirectory, ''))
+                uploadFilePath: path_1.join(artifactName, uploadPath)
             });
         }
         else {
@@ -138,18 +1220,444 @@ function getUploadSpecification(artifactName, rootDirectory, artifactFiles) {
     return specifications;
 }
 exports.getUploadSpecification = getUploadSpecification;
-//# sourceMappingURL=internal-upload-specification.js.map
+//# sourceMappingURL=upload-specification.js.map
 
 /***/ }),
 
-/***/ 87:
-/***/ (function(module) {
+/***/ 181:
+/***/ (function(__unusedmodule, exports) {
 
-module.exports = require("os");
+"use strict";
+
+Object.defineProperty(exports, "__esModule", { value: true });
+class BasicCredentialHandler {
+    constructor(username, password) {
+        this.username = username;
+        this.password = password;
+    }
+    prepareRequest(options) {
+        options.headers['Authorization'] = 'Basic ' + Buffer.from(this.username + ':' + this.password).toString('base64');
+    }
+    // This handler cannot handle 401
+    canHandleAuthentication(response) {
+        return false;
+    }
+    handleAuthentication(httpClient, requestInfo, objs) {
+        return null;
+    }
+}
+exports.BasicCredentialHandler = BasicCredentialHandler;
+class BearerCredentialHandler {
+    constructor(token) {
+        this.token = token;
+    }
+    // currently implements pre-authorization
+    // TODO: support preAuth = false where it hooks on 401
+    prepareRequest(options) {
+        options.headers['Authorization'] = 'Bearer ' + this.token;
+    }
+    // This handler cannot handle 401
+    canHandleAuthentication(response) {
+        return false;
+    }
+    handleAuthentication(httpClient, requestInfo, objs) {
+        return null;
+    }
+}
+exports.BearerCredentialHandler = BearerCredentialHandler;
+class PersonalAccessTokenCredentialHandler {
+    constructor(token) {
+        this.token = token;
+    }
+    // currently implements pre-authorization
+    // TODO: support preAuth = false where it hooks on 401
+    prepareRequest(options) {
+        options.headers['Authorization'] = 'Basic ' + Buffer.from('PAT:' + this.token).toString('base64');
+    }
+    // This handler cannot handle 401
+    canHandleAuthentication(response) {
+        return false;
+    }
+    handleAuthentication(httpClient, requestInfo, objs) {
+        return null;
+    }
+}
+exports.PersonalAccessTokenCredentialHandler = PersonalAccessTokenCredentialHandler;
+
 
 /***/ }),
 
-/***/ 130:
+/***/ 211:
+/***/ (function(__unusedmodule, exports, __webpack_require__) {
+
+"use strict";
+
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (Object.hasOwnProperty.call(mod, k)) result[k] = mod[k];
+    result["default"] = mod;
+    return result;
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const command_1 = __webpack_require__(536);
+const os = __importStar(__webpack_require__(87));
+const path = __importStar(__webpack_require__(622));
+/**
+ * The code to exit an action
+ */
+var ExitCode;
+(function (ExitCode) {
+    /**
+     * A code indicating that the action was successful
+     */
+    ExitCode[ExitCode["Success"] = 0] = "Success";
+    /**
+     * A code indicating that the action was a failure
+     */
+    ExitCode[ExitCode["Failure"] = 1] = "Failure";
+})(ExitCode = exports.ExitCode || (exports.ExitCode = {}));
+//-----------------------------------------------------------------------
+// Variables
+//-----------------------------------------------------------------------
+/**
+ * Sets env variable for this action and future actions in the job
+ * @param name the name of the variable to set
+ * @param val the value of the variable
+ */
+function exportVariable(name, val) {
+    process.env[name] = val;
+    command_1.issueCommand('set-env', { name }, val);
+}
+exports.exportVariable = exportVariable;
+/**
+ * Registers a secret which will get masked from logs
+ * @param secret value of the secret
+ */
+function setSecret(secret) {
+    command_1.issueCommand('add-mask', {}, secret);
+}
+exports.setSecret = setSecret;
+/**
+ * Prepends inputPath to the PATH (for this action and future actions)
+ * @param inputPath
+ */
+function addPath(inputPath) {
+    command_1.issueCommand('add-path', {}, inputPath);
+    process.env['PATH'] = `${inputPath}${path.delimiter}${process.env['PATH']}`;
+}
+exports.addPath = addPath;
+/**
+ * Gets the value of an input.  The value is also trimmed.
+ *
+ * @param     name     name of the input to get
+ * @param     options  optional. See InputOptions.
+ * @returns   string
+ */
+function getInput(name, options) {
+    const val = process.env[`INPUT_${name.replace(/ /g, '_').toUpperCase()}`] || '';
+    if (options && options.required && !val) {
+        throw new Error(`Input required and not supplied: ${name}`);
+    }
+    return val.trim();
+}
+exports.getInput = getInput;
+/**
+ * Sets the value of an output.
+ *
+ * @param     name     name of the output to set
+ * @param     value    value to store
+ */
+function setOutput(name, value) {
+    command_1.issueCommand('set-output', { name }, value);
+}
+exports.setOutput = setOutput;
+//-----------------------------------------------------------------------
+// Results
+//-----------------------------------------------------------------------
+/**
+ * Sets the action status to failed.
+ * When the action exits it will be with an exit code of 1
+ * @param message add error issue message
+ */
+function setFailed(message) {
+    process.exitCode = ExitCode.Failure;
+    error(message);
+}
+exports.setFailed = setFailed;
+//-----------------------------------------------------------------------
+// Logging Commands
+//-----------------------------------------------------------------------
+/**
+ * Gets whether Actions Step Debug is on or not
+ */
+function isDebug() {
+    return process.env['RUNNER_DEBUG'] === '1';
+}
+exports.isDebug = isDebug;
+/**
+ * Writes debug message to user log
+ * @param message debug message
+ */
+function debug(message) {
+    command_1.issueCommand('debug', {}, message);
+}
+exports.debug = debug;
+/**
+ * Adds an error issue
+ * @param message error issue message
+ */
+function error(message) {
+    command_1.issue('error', message);
+}
+exports.error = error;
+/**
+ * Adds an warning issue
+ * @param message warning issue message
+ */
+function warning(message) {
+    command_1.issue('warning', message);
+}
+exports.warning = warning;
+/**
+ * Writes info to log with console.log.
+ * @param message info message
+ */
+function info(message) {
+    process.stdout.write(message + os.EOL);
+}
+exports.info = info;
+/**
+ * Begin an output group.
+ *
+ * Output until the next `groupEnd` will be foldable in this group
+ *
+ * @param name The name of the output group
+ */
+function startGroup(name) {
+    command_1.issue('group', name);
+}
+exports.startGroup = startGroup;
+/**
+ * End an output group.
+ */
+function endGroup() {
+    command_1.issue('endgroup');
+}
+exports.endGroup = endGroup;
+/**
+ * Wrap an asynchronous function call in a group.
+ *
+ * Returns the same type as the function itself.
+ *
+ * @param name The name of the group
+ * @param fn The function to wrap in the group
+ */
+function group(name, fn) {
+    return __awaiter(this, void 0, void 0, function* () {
+        startGroup(name);
+        let result;
+        try {
+            result = yield fn();
+        }
+        finally {
+            endGroup();
+        }
+        return result;
+    });
+}
+exports.group = group;
+//-----------------------------------------------------------------------
+// Wrapper action state
+//-----------------------------------------------------------------------
+/**
+ * Saves state for current action, the state can only be retrieved by this action's post job execution.
+ *
+ * @param     name     name of the state to store
+ * @param     value    value to store
+ */
+function saveState(name, value) {
+    command_1.issueCommand('save-state', { name }, value);
+}
+exports.saveState = saveState;
+/**
+ * Gets the value of an state set by this action's main execution.
+ *
+ * @param     name     name of the state to get
+ * @returns   string
+ */
+function getState(name) {
+    return process.env[`STATE_${name}`] || '';
+}
+exports.getState = getState;
+//# sourceMappingURL=core.js.map
+
+/***/ }),
+
+/***/ 231:
+/***/ (function(__unusedmodule, exports, __webpack_require__) {
+
+"use strict";
+
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (Object.hasOwnProperty.call(mod, k)) result[k] = mod[k];
+    result["default"] = mod;
+    return result;
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const core = __importStar(__webpack_require__(211));
+const upload_specification_1 = __webpack_require__(155);
+const upload_http_client_1 = __webpack_require__(142);
+const utils_1 = __webpack_require__(844);
+const download_http_client_1 = __webpack_require__(342);
+const download_specification_1 = __webpack_require__(721);
+const config_variables_1 = __webpack_require__(706);
+const path_1 = __webpack_require__(622);
+class DefaultArtifactClient {
+    /**
+     * Constructs a DefaultArtifactClient
+     */
+    static create() {
+        return new DefaultArtifactClient();
+    }
+    /**
+     * Uploads an artifact
+     */
+    uploadArtifact(name, files, rootDirectory, options) {
+        return __awaiter(this, void 0, void 0, function* () {
+            utils_1.checkArtifactName(name);
+            // Get specification for the files being uploaded
+            const uploadSpecification = upload_specification_1.getUploadSpecification(name, rootDirectory, files);
+            const uploadResponse = {
+                artifactName: name,
+                artifactItems: [],
+                size: 0,
+                failedItems: []
+            };
+            const uploadHttpClient = new upload_http_client_1.UploadHttpClient();
+            if (uploadSpecification.length === 0) {
+                core.warning(`No files found that can be uploaded`);
+            }
+            else {
+                // Create an entry for the artifact in the file container
+                const response = yield uploadHttpClient.createArtifactInFileContainer(name);
+                if (!response.fileContainerResourceUrl) {
+                    core.debug(response.toString());
+                    throw new Error('No URL provided by the Artifact Service to upload an artifact to');
+                }
+                core.debug(`Upload Resource URL: ${response.fileContainerResourceUrl}`);
+                // Upload each of the files that were found concurrently
+                const uploadResult = yield uploadHttpClient.uploadArtifactToFileContainer(response.fileContainerResourceUrl, uploadSpecification, options);
+                // Update the size of the artifact to indicate we are done uploading
+                // The uncompressed size is used for display when downloading a zip of the artifact from the UI
+                yield uploadHttpClient.patchArtifactSize(uploadResult.totalSize, name);
+                core.info(`Finished uploading artifact ${name}. Reported size is ${uploadResult.uploadSize} bytes. There were ${uploadResult.failedItems.length} items that failed to upload`);
+                uploadResponse.artifactItems = uploadSpecification.map(item => item.absoluteFilePath);
+                uploadResponse.size = uploadResult.uploadSize;
+                uploadResponse.failedItems = uploadResult.failedItems;
+            }
+            return uploadResponse;
+        });
+    }
+    downloadArtifact(name, path, options) {
+        var _a;
+        return __awaiter(this, void 0, void 0, function* () {
+            const downloadHttpClient = new download_http_client_1.DownloadHttpClient();
+            const artifacts = yield downloadHttpClient.listArtifacts();
+            if (artifacts.count === 0) {
+                throw new Error(`Unable to find any artifacts for the associated workflow`);
+            }
+            const artifactToDownload = artifacts.value.find(artifact => {
+                return artifact.name === name;
+            });
+            if (!artifactToDownload) {
+                throw new Error(`Unable to find an artifact with the name: ${name}`);
+            }
+            const items = yield downloadHttpClient.getContainerItems(artifactToDownload.name, artifactToDownload.fileContainerResourceUrl);
+            if (!path) {
+                path = config_variables_1.getWorkSpaceDirectory();
+            }
+            path = path_1.normalize(path);
+            path = path_1.resolve(path);
+            // During upload, empty directories are rejected by the remote server so there should be no artifacts that consist of only empty directories
+            const downloadSpecification = download_specification_1.getDownloadSpecification(name, items.value, path, ((_a = options) === null || _a === void 0 ? void 0 : _a.createArtifactFolder) || false);
+            if (downloadSpecification.filesToDownload.length === 0) {
+                core.info(`No downloadable files were found for the artifact: ${artifactToDownload.name}`);
+            }
+            else {
+                // Create all necessary directories recursively before starting any download
+                yield utils_1.createDirectoriesForArtifact(downloadSpecification.directoryStructure);
+                yield downloadHttpClient.downloadSingleArtifact(downloadSpecification.filesToDownload);
+            }
+            return {
+                artifactName: name,
+                downloadPath: downloadSpecification.rootDownloadLocation
+            };
+        });
+    }
+    downloadAllArtifacts(path) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const downloadHttpClient = new download_http_client_1.DownloadHttpClient();
+            const response = [];
+            const artifacts = yield downloadHttpClient.listArtifacts();
+            if (artifacts.count === 0) {
+                core.info('Unable to find any artifacts for the associated workflow');
+                return response;
+            }
+            if (!path) {
+                path = config_variables_1.getWorkSpaceDirectory();
+            }
+            path = path_1.normalize(path);
+            path = path_1.resolve(path);
+            let downloadedArtifacts = 0;
+            while (downloadedArtifacts < artifacts.count) {
+                const currentArtifactToDownload = artifacts.value[downloadedArtifacts];
+                downloadedArtifacts += 1;
+                // Get container entries for the specific artifact
+                const items = yield downloadHttpClient.getContainerItems(currentArtifactToDownload.name, currentArtifactToDownload.fileContainerResourceUrl);
+                const downloadSpecification = download_specification_1.getDownloadSpecification(currentArtifactToDownload.name, items.value, path, true);
+                if (downloadSpecification.filesToDownload.length === 0) {
+                    core.info(`No downloadable files were found for any artifact ${currentArtifactToDownload.name}`);
+                }
+                else {
+                    yield utils_1.createDirectoriesForArtifact(downloadSpecification.directoryStructure);
+                    yield downloadHttpClient.downloadSingleArtifact(downloadSpecification.filesToDownload);
+                }
+                response.push({
+                    artifactName: currentArtifactToDownload.name,
+                    downloadPath: downloadSpecification.rootDownloadLocation
+                });
+            }
+            return response;
+        });
+    }
+}
+exports.DefaultArtifactClient = DefaultArtifactClient;
+//# sourceMappingURL=artifact-client.js.map
+
+/***/ }),
+
+/***/ 342:
 /***/ (function(__unusedmodule, exports, __webpack_require__) {
 
 "use strict";
@@ -172,121 +1680,1349 @@ var __importStar = (this && this.__importStar) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const fs = __importStar(__webpack_require__(747));
-const internal_utils_1 = __webpack_require__(931);
+const zlib = __importStar(__webpack_require__(761));
+const utils_1 = __webpack_require__(844);
 const url_1 = __webpack_require__(835);
-const internal_config_variables_1 = __webpack_require__(717);
-const core_1 = __webpack_require__(470);
-/**
- * Gets a list of all artifacts that are in a specific container
- */
-function listArtifacts() {
-    return __awaiter(this, void 0, void 0, function* () {
-        const artifactUrl = internal_utils_1.getArtifactUrl();
-        const client = internal_utils_1.createHttpClient();
-        const requestOptions = internal_utils_1.getRequestOptions('application/json');
-        const rawResponse = yield client.get(artifactUrl, requestOptions);
-        const body = yield rawResponse.readBody();
-        if (internal_utils_1.isSuccessStatusCode(rawResponse.message.statusCode) && body) {
-            return JSON.parse(body);
-        }
-        // eslint-disable-next-line no-console
-        console.log(rawResponse);
-        throw new Error(`Unable to list artifacts for the run`);
-    });
-}
-exports.listArtifacts = listArtifacts;
-/**
- * Fetches a set of container items that describe the contents of an artifact
- * @param artifactName the name of the artifact
- * @param containerUrl the artifact container URL for the run
- */
-function getContainerItems(artifactName, containerUrl) {
-    return __awaiter(this, void 0, void 0, function* () {
-        // The itemPath search parameter controls which containers will be returned
-        const resourceUrl = new url_1.URL(containerUrl);
-        resourceUrl.searchParams.append('itemPath', artifactName);
-        const client = internal_utils_1.createHttpClient();
-        const rawResponse = yield client.get(resourceUrl.toString());
-        const body = yield rawResponse.readBody();
-        if (internal_utils_1.isSuccessStatusCode(rawResponse.message.statusCode) && body) {
-            return JSON.parse(body);
-        }
-        // eslint-disable-next-line no-console
-        console.log(rawResponse);
-        throw new Error(`Unable to get ContainersItems from ${resourceUrl}`);
-    });
-}
-exports.getContainerItems = getContainerItems;
-/**
- * Concurrently downloads all the files that are part of an artifact
- * @param downloadItems information about what items to download and where to save them
- */
-function downloadSingleArtifact(downloadItems) {
-    return __awaiter(this, void 0, void 0, function* () {
-        const DOWNLOAD_CONCURRENCY = internal_config_variables_1.getDownloadFileConcurrency();
-        // Limit the number of files downloaded at a single time
-        const parallelDownloads = [...new Array(DOWNLOAD_CONCURRENCY).keys()];
-        const client = internal_utils_1.createHttpClient();
-        let downloadedFiles = 0;
-        yield Promise.all(parallelDownloads.map(() => __awaiter(this, void 0, void 0, function* () {
-            while (downloadedFiles < downloadItems.length) {
-                const currentFileToDownload = downloadItems[downloadedFiles];
-                downloadedFiles += 1;
-                yield downloadIndividualFile(client, currentFileToDownload.sourceLocation, currentFileToDownload.targetPath);
+const status_reporter_1 = __webpack_require__(974);
+const perf_hooks_1 = __webpack_require__(630);
+const http_manager_1 = __webpack_require__(114);
+const config_variables_1 = __webpack_require__(706);
+const core_1 = __webpack_require__(211);
+class DownloadHttpClient {
+    constructor() {
+        this.downloadHttpManager = new http_manager_1.HttpManager(config_variables_1.getDownloadFileConcurrency());
+        this.statusReporter = new status_reporter_1.StatusReporter();
+    }
+    /**
+     * Gets a list of all artifacts that are in a specific container
+     */
+    listArtifacts() {
+        return __awaiter(this, void 0, void 0, function* () {
+            const artifactUrl = utils_1.getArtifactUrl();
+            // use the first client from the httpManager, `keep-alive` is not used so the connection will close immediatly
+            const client = this.downloadHttpManager.getClient(0);
+            const requestOptions = utils_1.getRequestOptions('application/json', false);
+            const rawResponse = yield client.get(artifactUrl, requestOptions);
+            const body = yield rawResponse.readBody();
+            if (utils_1.isSuccessStatusCode(rawResponse.message.statusCode) && body) {
+                return JSON.parse(body);
             }
-        })));
-    });
-}
-exports.downloadSingleArtifact = downloadSingleArtifact;
-/**
- * Downloads an individual file
- * @param client http client that will be used to make the necessary calls
- * @param artifactLocation origin location where a file will be downloaded from
- * @param downloadPath destination location for the file being downloaded
- */
-function downloadIndividualFile(client, artifactLocation, downloadPath) {
-    return __awaiter(this, void 0, void 0, function* () {
-        const stream = fs.createWriteStream(downloadPath);
-        const response = yield client.get(artifactLocation);
-        if (internal_utils_1.isSuccessStatusCode(response.message.statusCode)) {
-            yield pipeResponseToStream(response, stream);
-        }
-        else if (internal_utils_1.isRetryableStatusCode(response.message.statusCode)) {
-            core_1.warning(`Received http ${response.message.statusCode} during file download, will retry ${artifactLocation} after 10 seconds`);
-            yield new Promise(resolve => setTimeout(resolve, 10000));
-            const retryResponse = yield client.get(artifactLocation);
-            if (internal_utils_1.isSuccessStatusCode(retryResponse.message.statusCode)) {
-                yield pipeResponseToStream(response, stream);
-            }
-            else {
-                // eslint-disable-next-line no-console
-                console.log(retryResponse);
-                throw new Error(`Unable to download ${artifactLocation}`);
-            }
-        }
-        else {
             // eslint-disable-next-line no-console
-            console.log(response);
-            throw new Error(`Unable to download ${artifactLocation}`);
+            console.log(rawResponse);
+            throw new Error(`Unable to list artifacts for the run`);
+        });
+    }
+    /**
+     * Fetches a set of container items that describe the contents of an artifact
+     * @param artifactName the name of the artifact
+     * @param containerUrl the artifact container URL for the run
+     */
+    getContainerItems(artifactName, containerUrl) {
+        return __awaiter(this, void 0, void 0, function* () {
+            // the itemPath search parameter controls which containers will be returned
+            const resourceUrl = new url_1.URL(containerUrl);
+            resourceUrl.searchParams.append('itemPath', artifactName);
+            // use the first client from the httpManager, `keep-alive` is not used so the connection will close immediatly
+            const client = this.downloadHttpManager.getClient(0);
+            const requestOptions = utils_1.getRequestOptions('application/json', false);
+            const rawResponse = yield client.get(resourceUrl.toString(), requestOptions);
+            const body = yield rawResponse.readBody();
+            if (utils_1.isSuccessStatusCode(rawResponse.message.statusCode) && body) {
+                return JSON.parse(body);
+            }
+            // eslint-disable-next-line no-console
+            console.log(rawResponse);
+            throw new Error(`Unable to get ContainersItems from ${resourceUrl}`);
+        });
+    }
+    /**
+     * Concurrently downloads all the files that are part of an artifact
+     * @param downloadItems information about what items to download and where to save them
+     */
+    downloadSingleArtifact(downloadItems) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const DOWNLOAD_CONCURRENCY = config_variables_1.getDownloadFileConcurrency();
+            // limit the number of files downloaded at a single time
+            const parallelDownloads = [...new Array(DOWNLOAD_CONCURRENCY).keys()];
+            let currentFile = 0;
+            let downloadedFiles = 0;
+            core_1.info(`Total number of files that will be downloaded: ${downloadItems.length}`);
+            this.statusReporter.setTotalNumberOfFilesToProcess(downloadItems.length);
+            this.statusReporter.start();
+            yield Promise.all(parallelDownloads.map((index) => __awaiter(this, void 0, void 0, function* () {
+                while (currentFile < downloadItems.length) {
+                    const currentFileToDownload = downloadItems[currentFile];
+                    currentFile += 1;
+                    const startTime = perf_hooks_1.performance.now();
+                    yield this.downloadIndividualFile(index, currentFileToDownload.sourceLocation, currentFileToDownload.targetPath);
+                    core_1.debug(`File: ${++downloadedFiles}/${downloadItems.length}. ${currentFileToDownload.targetPath} took ${(perf_hooks_1.performance.now() - startTime).toFixed(3)} milliseconds to finish downloading`);
+                    this.statusReporter.incrementProcessedCount();
+                }
+            })));
+            this.statusReporter.stop();
+            // done downloading, safety dispose all connections
+            this.downloadHttpManager.disposeAndReplaceAllClients();
+        });
+    }
+    /**
+     * Downloads an individual file
+     * @param httpClientIndex the index of the http client that is used to make all of the calls
+     * @param artifactLocation origin location where a file will be downloaded from
+     * @param downloadPath destination location for the file being downloaded
+     */
+    downloadIndividualFile(httpClientIndex, artifactLocation, downloadPath) {
+        return __awaiter(this, void 0, void 0, function* () {
+            let retryCount = 0;
+            const retryLimit = config_variables_1.getRetryLimit();
+            const stream = fs.createWriteStream(downloadPath);
+            const requestOptions = utils_1.getRequestOptions('application/octet-stream', true);
+            // a single GET request is used to download a file
+            const makeDownloadRequest = () => __awaiter(this, void 0, void 0, function* () {
+                const client = this.downloadHttpManager.getClient(httpClientIndex);
+                return yield client.get(artifactLocation, requestOptions);
+            });
+            // checks the response headers to determine if the file was compressed using gzip
+            const isGzip = (headers) => {
+                return ('content-encoding' in headers && headers['content-encoding'] === 'gzip');
+            };
+            // checks if the retry limit has been reached. If there have been too many retries, fail so the download stops
+            const checkRetryLimit = (response) => {
+                if (retryCount > retryLimit) {
+                    if (response) {
+                        // eslint-disable-next-line no-console
+                        console.log(response);
+                    }
+                    throw new Error(`Unable to download ${artifactLocation}. Retry limit has been reached`);
+                }
+            };
+            // Back off exponentially based off of the retry count.
+            const backoffExponentially = () => __awaiter(this, void 0, void 0, function* () {
+                this.downloadHttpManager.disposeAndReplaceClient(httpClientIndex);
+                const backoffTime = utils_1.getExponentialRetryTimeInMilliseconds(retryCount);
+                core_1.info(`Exponential backoff for retry #${retryCount}. Waiting for ${backoffTime} milliseconds before continuing the download`);
+                return new Promise(resolve => setTimeout(resolve, utils_1.getExponentialRetryTimeInMilliseconds(retryCount)));
+            });
+            const backOffUsingRetryValue = (retryAfterValue) => __awaiter(this, void 0, void 0, function* () {
+                this.downloadHttpManager.disposeAndReplaceClient(httpClientIndex);
+                core_1.info(`Backoff due to too many requests, retry #${retryCount}. Waiting for ${retryAfterValue} milliseconds before continuing the download`);
+                return new Promise(resolve => setTimeout(resolve, retryAfterValue));
+            });
+            while (retryCount <= retryLimit) {
+                try {
+                    const response = yield makeDownloadRequest();
+                    // Always read the body of the response. There is potential for a resource leak if the body is not read which will
+                    // result in the connection remaining open along with unintended consequences when trying to dispose of the client
+                    yield response.readBody();
+                    if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
+                        yield this.pipeResponseToStream(response, stream, isGzip(response.message.headers));
+                    }
+                    else if (utils_1.isThrottledStatusCode(response.message.statusCode)) {
+                        core_1.info('A 429 response code has been recieved when attempting to download an artifact');
+                        const retryAfterValue = utils_1.tryGetRetryAfterValueTimeInMilliseconds(response.message.headers);
+                        if (retryAfterValue) {
+                            yield backOffUsingRetryValue(retryAfterValue);
+                        }
+                        else {
+                            // no retry time available, differ to standard exponential backoff
+                            retryCount++;
+                            checkRetryLimit(response);
+                            yield backoffExponentially();
+                        }
+                    }
+                    else if (utils_1.isRetryableStatusCode(response.message.statusCode)) {
+                        retryCount++;
+                        checkRetryLimit(response);
+                        yield backoffExponentially();
+                    }
+                    else {
+                        // Some unexpected response code, fail immediatly and stop the download
+                        // eslint-disable-next-line no-console
+                        console.log(response);
+                        throw new Error(`###ERROR### Unexpected response. Unable to download ${artifactLocation} ###`);
+                    }
+                }
+                catch (error) {
+                    // if an error is catched, it is usually indicative of a timeout so retry the download
+                    core_1.info('An error has been caught, retrying the download');
+                    // eslint-disable-next-line no-console
+                    console.log(error);
+                    retryCount++;
+                    checkRetryLimit();
+                    yield backoffExponentially();
+                }
+            }
+        });
+    }
+    /**
+     * Pipes the response from downloading an individual file to the appropriate stream
+     * @param response the http response recieved when downloading a file
+     * @param stream the stream where the file should be written to
+     * @param isGzip does the response need to be be uncompressed
+     */
+    pipeResponseToStream(response, stream, isGzip) {
+        return __awaiter(this, void 0, void 0, function* () {
+            return new Promise(resolve => {
+                if (isGzip) {
+                    // pipe the response into gunzip to decompress
+                    const gunzip = zlib.createGunzip();
+                    response.message
+                        .pipe(gunzip)
+                        .pipe(stream)
+                        .on('close', () => {
+                        resolve();
+                    });
+                }
+                else {
+                    response.message.pipe(stream).on('close', () => {
+                        resolve();
+                    });
+                }
+            });
+        });
+    }
+}
+exports.DownloadHttpClient = DownloadHttpClient;
+//# sourceMappingURL=download-http-client.js.map
+
+/***/ }),
+
+/***/ 357:
+/***/ (function(module) {
+
+module.exports = require("assert");
+
+/***/ }),
+
+/***/ 413:
+/***/ (function(module) {
+
+module.exports = require("stream");
+
+/***/ }),
+
+/***/ 417:
+/***/ (function(module) {
+
+module.exports = require("crypto");
+
+/***/ }),
+
+/***/ 431:
+/***/ (function(__unusedmodule, exports, __webpack_require__) {
+
+"use strict";
+
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (Object.hasOwnProperty.call(mod, k)) result[k] = mod[k];
+    result["default"] = mod;
+    return result;
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const os = __importStar(__webpack_require__(87));
+/**
+ * Commands
+ *
+ * Command Format:
+ *   ::name key=value,key=value::message
+ *
+ * Examples:
+ *   ::warning::This is the message
+ *   ::set-env name=MY_VAR::some value
+ */
+function issueCommand(command, properties, message) {
+    const cmd = new Command(command, properties, message);
+    process.stdout.write(cmd.toString() + os.EOL);
+}
+exports.issueCommand = issueCommand;
+function issue(name, message = '') {
+    issueCommand(name, {}, message);
+}
+exports.issue = issue;
+const CMD_STRING = '::';
+class Command {
+    constructor(command, properties, message) {
+        if (!command) {
+            command = 'missing.command';
         }
+        this.command = command;
+        this.properties = properties;
+        this.message = message;
+    }
+    toString() {
+        let cmdStr = CMD_STRING + this.command;
+        if (this.properties && Object.keys(this.properties).length > 0) {
+            cmdStr += ' ';
+            let first = true;
+            for (const key in this.properties) {
+                if (this.properties.hasOwnProperty(key)) {
+                    const val = this.properties[key];
+                    if (val) {
+                        if (first) {
+                            first = false;
+                        }
+                        else {
+                            cmdStr += ',';
+                        }
+                        cmdStr += `${key}=${escapeProperty(val)}`;
+                    }
+                }
+            }
+        }
+        cmdStr += `${CMD_STRING}${escapeData(this.message)}`;
+        return cmdStr;
+    }
+}
+function escapeData(s) {
+    return (s || '')
+        .replace(/%/g, '%25')
+        .replace(/\r/g, '%0D')
+        .replace(/\n/g, '%0A');
+}
+function escapeProperty(s) {
+    return (s || '')
+        .replace(/%/g, '%25')
+        .replace(/\r/g, '%0D')
+        .replace(/\n/g, '%0A')
+        .replace(/:/g, '%3A')
+        .replace(/,/g, '%2C');
+}
+//# sourceMappingURL=command.js.map
+
+/***/ }),
+
+/***/ 466:
+/***/ (function(module, __unusedexports, __webpack_require__) {
+
+const {promisify} = __webpack_require__(669);
+const tmp = __webpack_require__(100);
+
+// file
+module.exports.fileSync = tmp.fileSync;
+const fileWithOptions = promisify((options, cb) =>
+  tmp.file(options, (err, path, fd, cleanup) =>
+    err ? cb(err) : cb(undefined, { path, fd, cleanup: promisify(cleanup) })
+  )
+);
+module.exports.file = async (options) => fileWithOptions(options);
+
+module.exports.withFile = async function withFile(fn, options) {
+  const { path, fd, cleanup } = await module.exports.file(options);
+  try {
+    return await fn({ path, fd });
+  } finally {
+    await cleanup();
+  }
+};
+
+
+// directory
+module.exports.dirSync = tmp.dirSync;
+const dirWithOptions = promisify((options, cb) =>
+  tmp.dir(options, (err, path, cleanup) =>
+    err ? cb(err) : cb(undefined, { path, cleanup: promisify(cleanup) })
+  )
+);
+module.exports.dir = async (options) => dirWithOptions(options);
+
+module.exports.withDir = async function withDir(fn, options) {
+  const { path, cleanup } = await module.exports.dir(options);
+  try {
+    return await fn({ path });
+  } finally {
+    await cleanup();
+  }
+};
+
+
+// name generation
+module.exports.tmpNameSync = tmp.tmpNameSync;
+module.exports.tmpName = promisify(tmp.tmpName);
+
+module.exports.tmpdir = tmp.tmpdir;
+
+module.exports.setGracefulCleanup = tmp.setGracefulCleanup;
+
+
+/***/ }),
+
+/***/ 470:
+/***/ (function(__unusedmodule, exports, __webpack_require__) {
+
+"use strict";
+
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (Object.hasOwnProperty.call(mod, k)) result[k] = mod[k];
+    result["default"] = mod;
+    return result;
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const command_1 = __webpack_require__(431);
+const os = __importStar(__webpack_require__(87));
+const path = __importStar(__webpack_require__(622));
+/**
+ * The code to exit an action
+ */
+var ExitCode;
+(function (ExitCode) {
+    /**
+     * A code indicating that the action was successful
+     */
+    ExitCode[ExitCode["Success"] = 0] = "Success";
+    /**
+     * A code indicating that the action was a failure
+     */
+    ExitCode[ExitCode["Failure"] = 1] = "Failure";
+})(ExitCode = exports.ExitCode || (exports.ExitCode = {}));
+//-----------------------------------------------------------------------
+// Variables
+//-----------------------------------------------------------------------
+/**
+ * Sets env variable for this action and future actions in the job
+ * @param name the name of the variable to set
+ * @param val the value of the variable
+ */
+function exportVariable(name, val) {
+    process.env[name] = val;
+    command_1.issueCommand('set-env', { name }, val);
+}
+exports.exportVariable = exportVariable;
+/**
+ * Registers a secret which will get masked from logs
+ * @param secret value of the secret
+ */
+function setSecret(secret) {
+    command_1.issueCommand('add-mask', {}, secret);
+}
+exports.setSecret = setSecret;
+/**
+ * Prepends inputPath to the PATH (for this action and future actions)
+ * @param inputPath
+ */
+function addPath(inputPath) {
+    command_1.issueCommand('add-path', {}, inputPath);
+    process.env['PATH'] = `${inputPath}${path.delimiter}${process.env['PATH']}`;
+}
+exports.addPath = addPath;
+/**
+ * Gets the value of an input.  The value is also trimmed.
+ *
+ * @param     name     name of the input to get
+ * @param     options  optional. See InputOptions.
+ * @returns   string
+ */
+function getInput(name, options) {
+    const val = process.env[`INPUT_${name.replace(/ /g, '_').toUpperCase()}`] || '';
+    if (options && options.required && !val) {
+        throw new Error(`Input required and not supplied: ${name}`);
+    }
+    return val.trim();
+}
+exports.getInput = getInput;
+/**
+ * Sets the value of an output.
+ *
+ * @param     name     name of the output to set
+ * @param     value    value to store
+ */
+function setOutput(name, value) {
+    command_1.issueCommand('set-output', { name }, value);
+}
+exports.setOutput = setOutput;
+//-----------------------------------------------------------------------
+// Results
+//-----------------------------------------------------------------------
+/**
+ * Sets the action status to failed.
+ * When the action exits it will be with an exit code of 1
+ * @param message add error issue message
+ */
+function setFailed(message) {
+    process.exitCode = ExitCode.Failure;
+    error(message);
+}
+exports.setFailed = setFailed;
+//-----------------------------------------------------------------------
+// Logging Commands
+//-----------------------------------------------------------------------
+/**
+ * Writes debug message to user log
+ * @param message debug message
+ */
+function debug(message) {
+    command_1.issueCommand('debug', {}, message);
+}
+exports.debug = debug;
+/**
+ * Adds an error issue
+ * @param message error issue message
+ */
+function error(message) {
+    command_1.issue('error', message);
+}
+exports.error = error;
+/**
+ * Adds an warning issue
+ * @param message warning issue message
+ */
+function warning(message) {
+    command_1.issue('warning', message);
+}
+exports.warning = warning;
+/**
+ * Writes info to log with console.log.
+ * @param message info message
+ */
+function info(message) {
+    process.stdout.write(message + os.EOL);
+}
+exports.info = info;
+/**
+ * Begin an output group.
+ *
+ * Output until the next `groupEnd` will be foldable in this group
+ *
+ * @param name The name of the output group
+ */
+function startGroup(name) {
+    command_1.issue('group', name);
+}
+exports.startGroup = startGroup;
+/**
+ * End an output group.
+ */
+function endGroup() {
+    command_1.issue('endgroup');
+}
+exports.endGroup = endGroup;
+/**
+ * Wrap an asynchronous function call in a group.
+ *
+ * Returns the same type as the function itself.
+ *
+ * @param name The name of the group
+ * @param fn The function to wrap in the group
+ */
+function group(name, fn) {
+    return __awaiter(this, void 0, void 0, function* () {
+        startGroup(name);
+        let result;
+        try {
+            result = yield fn();
+        }
+        finally {
+            endGroup();
+        }
+        return result;
     });
 }
-exports.downloadIndividualFile = downloadIndividualFile;
-function pipeResponseToStream(response, stream) {
+exports.group = group;
+//-----------------------------------------------------------------------
+// Wrapper action state
+//-----------------------------------------------------------------------
+/**
+ * Saves state for current action, the state can only be retrieved by this action's post job execution.
+ *
+ * @param     name     name of the state to store
+ * @param     value    value to store
+ */
+function saveState(name, value) {
+    command_1.issueCommand('save-state', { name }, value);
+}
+exports.saveState = saveState;
+/**
+ * Gets the value of an state set by this action's main execution.
+ *
+ * @param     name     name of the state to get
+ * @returns   string
+ */
+function getState(name) {
+    return process.env[`STATE_${name}`] || '';
+}
+exports.getState = getState;
+//# sourceMappingURL=core.js.map
+
+/***/ }),
+
+/***/ 536:
+/***/ (function(__unusedmodule, exports, __webpack_require__) {
+
+"use strict";
+
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (Object.hasOwnProperty.call(mod, k)) result[k] = mod[k];
+    result["default"] = mod;
+    return result;
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const os = __importStar(__webpack_require__(87));
+/**
+ * Commands
+ *
+ * Command Format:
+ *   ::name key=value,key=value::message
+ *
+ * Examples:
+ *   ::warning::This is the message
+ *   ::set-env name=MY_VAR::some value
+ */
+function issueCommand(command, properties, message) {
+    const cmd = new Command(command, properties, message);
+    process.stdout.write(cmd.toString() + os.EOL);
+}
+exports.issueCommand = issueCommand;
+function issue(name, message = '') {
+    issueCommand(name, {}, message);
+}
+exports.issue = issue;
+const CMD_STRING = '::';
+class Command {
+    constructor(command, properties, message) {
+        if (!command) {
+            command = 'missing.command';
+        }
+        this.command = command;
+        this.properties = properties;
+        this.message = message;
+    }
+    toString() {
+        let cmdStr = CMD_STRING + this.command;
+        if (this.properties && Object.keys(this.properties).length > 0) {
+            cmdStr += ' ';
+            let first = true;
+            for (const key in this.properties) {
+                if (this.properties.hasOwnProperty(key)) {
+                    const val = this.properties[key];
+                    if (val) {
+                        if (first) {
+                            first = false;
+                        }
+                        else {
+                            cmdStr += ',';
+                        }
+                        cmdStr += `${key}=${escapeProperty(val)}`;
+                    }
+                }
+            }
+        }
+        cmdStr += `${CMD_STRING}${escapeData(this.message)}`;
+        return cmdStr;
+    }
+}
+function escapeData(s) {
+    return (s || '')
+        .replace(/%/g, '%25')
+        .replace(/\r/g, '%0D')
+        .replace(/\n/g, '%0A');
+}
+function escapeProperty(s) {
+    return (s || '')
+        .replace(/%/g, '%25')
+        .replace(/\r/g, '%0D')
+        .replace(/\n/g, '%0A')
+        .replace(/:/g, '%3A')
+        .replace(/,/g, '%2C');
+}
+//# sourceMappingURL=command.js.map
+
+/***/ }),
+
+/***/ 605:
+/***/ (function(module) {
+
+module.exports = require("http");
+
+/***/ }),
+
+/***/ 614:
+/***/ (function(module) {
+
+module.exports = require("events");
+
+/***/ }),
+
+/***/ 622:
+/***/ (function(module) {
+
+module.exports = require("path");
+
+/***/ }),
+
+/***/ 630:
+/***/ (function(module) {
+
+module.exports = require("perf_hooks");
+
+/***/ }),
+
+/***/ 631:
+/***/ (function(module) {
+
+module.exports = require("net");
+
+/***/ }),
+
+/***/ 636:
+/***/ (function(__unusedmodule, exports, __webpack_require__) {
+
+"use strict";
+
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __asyncValues = (this && this.__asyncValues) || function (o) {
+    if (!Symbol.asyncIterator) throw new TypeError("Symbol.asyncIterator is not defined.");
+    var m = o[Symbol.asyncIterator], i;
+    return m ? m.call(o) : (o = typeof __values === "function" ? __values(o) : o[Symbol.iterator](), i = {}, verb("next"), verb("throw"), verb("return"), i[Symbol.asyncIterator] = function () { return this; }, i);
+    function verb(n) { i[n] = o[n] && function (v) { return new Promise(function (resolve, reject) { v = o[n](v), settle(resolve, reject, v.done, v.value); }); }; }
+    function settle(resolve, reject, d, v) { Promise.resolve(v).then(function(v) { resolve({ value: v, done: d }); }, reject); }
+};
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (Object.hasOwnProperty.call(mod, k)) result[k] = mod[k];
+    result["default"] = mod;
+    return result;
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const fs = __importStar(__webpack_require__(747));
+const zlib = __importStar(__webpack_require__(761));
+const util_1 = __webpack_require__(669);
+const stat = util_1.promisify(fs.stat);
+/**
+ * Creates a Gzip compressed file of an original file at the provided temporary filepath location
+ * @param {string} originalFilePath filepath of whatever will be compressed. The original file will be unmodified
+ * @param {string} tempFilePath the location of where the Gzip file will be created
+ * @returns the size of gzip file that gets created
+ */
+function createGZipFileOnDisk(originalFilePath, tempFilePath) {
     return __awaiter(this, void 0, void 0, function* () {
-        return new Promise(resolve => {
-            response.message.pipe(stream).on('close', () => {
-                resolve();
+        return new Promise((resolve, reject) => {
+            const inputStream = fs.createReadStream(originalFilePath);
+            const gzip = zlib.createGzip();
+            const outputStream = fs.createWriteStream(tempFilePath);
+            inputStream.pipe(gzip).pipe(outputStream);
+            outputStream.on('finish', () => __awaiter(this, void 0, void 0, function* () {
+                // wait for stream to finish before calculating the size which is needed as part of the Content-Length header when starting an upload
+                const size = (yield stat(tempFilePath)).size;
+                resolve(size);
+            }));
+            outputStream.on('error', error => {
+                // eslint-disable-next-line no-console
+                console.log(error);
+                reject;
             });
         });
     });
 }
-exports.pipeResponseToStream = pipeResponseToStream;
-//# sourceMappingURL=internal-download-http-client.js.map
+exports.createGZipFileOnDisk = createGZipFileOnDisk;
+/**
+ * Creates a GZip file in memory using a buffer. Should be used for smaller files to reduce disk I/O
+ * @param originalFilePath the path to the original file that is being GZipped
+ * @returns a buffer with the GZip file
+ */
+function createGZipFileInBuffer(originalFilePath) {
+    return __awaiter(this, void 0, void 0, function* () {
+        return new Promise((resolve) => __awaiter(this, void 0, void 0, function* () {
+            var e_1, _a;
+            const inputStream = fs.createReadStream(originalFilePath);
+            const gzip = zlib.createGzip();
+            inputStream.pipe(gzip);
+            // read stream into buffer, using experimental async itterators see https://github.com/nodejs/readable-stream/issues/403#issuecomment-479069043
+            const chunks = [];
+            try {
+                for (var gzip_1 = __asyncValues(gzip), gzip_1_1; gzip_1_1 = yield gzip_1.next(), !gzip_1_1.done;) {
+                    const chunk = gzip_1_1.value;
+                    chunks.push(chunk);
+                }
+            }
+            catch (e_1_1) { e_1 = { error: e_1_1 }; }
+            finally {
+                try {
+                    if (gzip_1_1 && !gzip_1_1.done && (_a = gzip_1.return)) yield _a.call(gzip_1);
+                }
+                finally { if (e_1) throw e_1.error; }
+            }
+            resolve(Buffer.concat(chunks));
+        }));
+    });
+}
+exports.createGZipFileInBuffer = createGZipFileInBuffer;
+//# sourceMappingURL=upload-gzip.js.map
 
 /***/ }),
 
-/***/ 141:
+/***/ 669:
+/***/ (function(module) {
+
+module.exports = require("util");
+
+/***/ }),
+
+/***/ 685:
+/***/ (function(module) {
+
+"use strict";
+
+var isWindows = process.platform === 'win32';
+var trailingSlashRe = isWindows ? /[^:]\\$/ : /.\/$/;
+
+// https://github.com/nodejs/node/blob/3e7a14381497a3b73dda68d05b5130563cdab420/lib/os.js#L25-L43
+module.exports = function () {
+	var path;
+
+	if (isWindows) {
+		path = process.env.TEMP ||
+			process.env.TMP ||
+			(process.env.SystemRoot || process.env.windir) + '\\temp';
+	} else {
+		path = process.env.TMPDIR ||
+			process.env.TMP ||
+			process.env.TEMP ||
+			'/tmp';
+	}
+
+	if (trailingSlashRe.test(path)) {
+		path = path.slice(0, -1);
+	}
+
+	return path;
+};
+
+
+/***/ }),
+
+/***/ 694:
+/***/ (function(__unusedmodule, exports) {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", { value: true });
+var Inputs;
+(function (Inputs) {
+    Inputs["Name"] = "name";
+    Inputs["Path"] = "path";
+})(Inputs = exports.Inputs || (exports.Inputs = {}));
+
+
+/***/ }),
+
+/***/ 706:
+/***/ (function(__unusedmodule, exports) {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", { value: true });
+function getUploadFileConcurrency() {
+    return 2;
+}
+exports.getUploadFileConcurrency = getUploadFileConcurrency;
+function getUploadChunkSize() {
+    return 4 * 1024 * 1024; // 4 MB Chunks
+}
+exports.getUploadChunkSize = getUploadChunkSize;
+function getRetryLimit() {
+    return 5;
+}
+exports.getRetryLimit = getRetryLimit;
+function getRetryMultiplier() {
+    return 1.5;
+}
+exports.getRetryMultiplier = getRetryMultiplier;
+function getInitialRetryIntervalInMilliseconds() {
+    return 3000;
+}
+exports.getInitialRetryIntervalInMilliseconds = getInitialRetryIntervalInMilliseconds;
+function getDownloadFileConcurrency() {
+    return 2;
+}
+exports.getDownloadFileConcurrency = getDownloadFileConcurrency;
+function getRuntimeToken() {
+    const token = process.env['ACTIONS_RUNTIME_TOKEN'];
+    if (!token) {
+        throw new Error('Unable to get ACTIONS_RUNTIME_TOKEN env variable');
+    }
+    return token;
+}
+exports.getRuntimeToken = getRuntimeToken;
+function getRuntimeUrl() {
+    const runtimeUrl = process.env['ACTIONS_RUNTIME_URL'];
+    if (!runtimeUrl) {
+        throw new Error('Unable to get ACTIONS_RUNTIME_URL env variable');
+    }
+    return runtimeUrl;
+}
+exports.getRuntimeUrl = getRuntimeUrl;
+function getWorkFlowRunId() {
+    const workFlowRunId = process.env['GITHUB_RUN_ID'];
+    if (!workFlowRunId) {
+        throw new Error('Unable to get GITHUB_RUN_ID env variable');
+    }
+    return workFlowRunId;
+}
+exports.getWorkFlowRunId = getWorkFlowRunId;
+function getWorkSpaceDirectory() {
+    const workspaceDirectory = process.env['GITHUB_WORKSPACE'];
+    if (!workspaceDirectory) {
+        throw new Error('Unable to get GITHUB_WORKSPACE env variable');
+    }
+    return workspaceDirectory;
+}
+exports.getWorkSpaceDirectory = getWorkSpaceDirectory;
+//# sourceMappingURL=config-variables.js.map
+
+/***/ }),
+
+/***/ 721:
+/***/ (function(__unusedmodule, exports, __webpack_require__) {
+
+"use strict";
+
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (Object.hasOwnProperty.call(mod, k)) result[k] = mod[k];
+    result["default"] = mod;
+    return result;
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const path = __importStar(__webpack_require__(622));
+/**
+ * Creates a specification for a set of files that will be downloaded
+ * @param artifactName the name of the artifact
+ * @param artifactEntries a set of container entries that describe that files that make up an artifact
+ * @param downloadPath the path where the artifact will be downloaded to
+ * @param includeRootDirectory specifies if there should be an extra directory (denoted by the artifact name) where the artifact files should be downloaded to
+ */
+function getDownloadSpecification(artifactName, artifactEntries, downloadPath, includeRootDirectory) {
+    const directories = new Set();
+    const specifications = {
+        rootDownloadLocation: includeRootDirectory
+            ? path.join(downloadPath, artifactName)
+            : downloadPath,
+        directoryStructure: [],
+        filesToDownload: []
+    };
+    for (const entry of artifactEntries) {
+        // Ignore artifacts in the container that don't begin with the same name
+        if (entry.path.startsWith(`${artifactName}/`) ||
+            entry.path.startsWith(`${artifactName}\\`)) {
+            // normalize all separators to the local OS
+            const normalizedPathEntry = path.normalize(entry.path);
+            // entry.path always starts with the artifact name, if includeRootDirectory is false, remove the name from the beginning of the path
+            const filePath = path.join(downloadPath, includeRootDirectory
+                ? normalizedPathEntry
+                : normalizedPathEntry.replace(artifactName, ''));
+            // Case insensitive folder structure maintained in the backend, not every folder is created so the 'folder'
+            // itemType cannot be relied upon. The file must be used to determine the directory structure
+            if (entry.itemType === 'file') {
+                // Get the directories that we need to create from the filePath for each individual file
+                directories.add(path.dirname(filePath));
+                specifications.filesToDownload.push({
+                    sourceLocation: entry.contentLocation,
+                    targetPath: filePath
+                });
+            }
+        }
+    }
+    specifications.directoryStructure = Array.from(directories);
+    return specifications;
+}
+exports.getDownloadSpecification = getDownloadSpecification;
+//# sourceMappingURL=download-specification.js.map
+
+/***/ }),
+
+/***/ 747:
+/***/ (function(module) {
+
+module.exports = require("fs");
+
+/***/ }),
+
+/***/ 755:
+/***/ (function(__unusedmodule, exports, __webpack_require__) {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", { value: true });
+const url = __webpack_require__(835);
+function getProxyUrl(reqUrl) {
+    let usingSsl = reqUrl.protocol === 'https:';
+    let proxyUrl;
+    if (checkBypass(reqUrl)) {
+        return proxyUrl;
+    }
+    let proxyVar;
+    if (usingSsl) {
+        proxyVar = process.env["https_proxy"] ||
+            process.env["HTTPS_PROXY"];
+    }
+    else {
+        proxyVar = process.env["http_proxy"] ||
+            process.env["HTTP_PROXY"];
+    }
+    if (proxyVar) {
+        proxyUrl = url.parse(proxyVar);
+    }
+    return proxyUrl;
+}
+exports.getProxyUrl = getProxyUrl;
+function checkBypass(reqUrl) {
+    if (!reqUrl.hostname) {
+        return false;
+    }
+    let noProxy = process.env["no_proxy"] || process.env["NO_PROXY"] || '';
+    if (!noProxy) {
+        return false;
+    }
+    // Determine the request port
+    let reqPort;
+    if (reqUrl.port) {
+        reqPort = Number(reqUrl.port);
+    }
+    else if (reqUrl.protocol === 'http:') {
+        reqPort = 80;
+    }
+    else if (reqUrl.protocol === 'https:') {
+        reqPort = 443;
+    }
+    // Format the request hostname and hostname with port
+    let upperReqHosts = [reqUrl.hostname.toUpperCase()];
+    if (typeof reqPort === 'number') {
+        upperReqHosts.push(`${upperReqHosts[0]}:${reqPort}`);
+    }
+    // Compare request host against noproxy
+    for (let upperNoProxyItem of noProxy.split(',').map(x => x.trim().toUpperCase()).filter(x => x)) {
+        if (upperReqHosts.some(x => x === upperNoProxyItem)) {
+            return true;
+        }
+    }
+    return false;
+}
+exports.checkBypass = checkBypass;
+
+
+/***/ }),
+
+/***/ 761:
+/***/ (function(module) {
+
+module.exports = require("zlib");
+
+/***/ }),
+
+/***/ 799:
+/***/ (function(__unusedmodule, exports, __webpack_require__) {
+
+"use strict";
+
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (Object.hasOwnProperty.call(mod, k)) result[k] = mod[k];
+    result["default"] = mod;
+    return result;
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const core = __importStar(__webpack_require__(470));
+const artifact = __importStar(__webpack_require__(88));
+const constants_1 = __webpack_require__(694);
+function run() {
+    return __awaiter(this, void 0, void 0, function* () {
+        try {
+            const name = core.getInput(constants_1.Inputs.Name, { required: false });
+            const path = core.getInput(constants_1.Inputs.Path, { required: false });
+            const artifactClient = artifact.create();
+            if (!name) {
+                // download all artifacts
+                const downloadResponse = yield artifactClient.downloadAllArtifacts(path);
+                core.info(`There were ${downloadResponse.length} artifacts downloaded`);
+                for (const artifact of downloadResponse) {
+                    core.info(`Artifact ${artifact.artifactName} was downloaded to ${artifact.downloadPath}`);
+                }
+            }
+            else {
+                // download a single artifact
+                const downloadOptions = {
+                    createArtifactFolder: false
+                };
+                const downloadResponse = yield artifactClient.downloadArtifact(name, path, downloadOptions);
+                core.info(`Artifact ${downloadResponse.artifactName} was downloaded to ${downloadResponse.downloadPath}`);
+            }
+            core.info('Artifact download has finished successfully');
+        }
+        catch (err) {
+            core.setFailed(err.message);
+        }
+    });
+}
+run();
+
+
+/***/ }),
+
+/***/ 835:
+/***/ (function(module) {
+
+module.exports = require("url");
+
+/***/ }),
+
+/***/ 844:
+/***/ (function(__unusedmodule, exports, __webpack_require__) {
+
+"use strict";
+
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const core_1 = __webpack_require__(211);
+const fs_1 = __webpack_require__(747);
+const http_client_1 = __webpack_require__(985);
+const auth_1 = __webpack_require__(181);
+const config_variables_1 = __webpack_require__(706);
+/**
+ * Returns a retry time in milliseconds that exponentially gets larger
+ * depending on the amount of retries that have been attempted
+ */
+function getExponentialRetryTimeInMilliseconds(retryCount) {
+    if (retryCount < 0) {
+        throw new Error('RetryCount should not be negative');
+    }
+    else if (retryCount === 0) {
+        return config_variables_1.getInitialRetryIntervalInMilliseconds();
+    }
+    const minTime = config_variables_1.getInitialRetryIntervalInMilliseconds() * config_variables_1.getRetryMultiplier() * retryCount;
+    const maxTime = minTime * config_variables_1.getRetryMultiplier();
+    // returns a random number between the minTime (inclusive) and the maxTime (exclusive)
+    return Math.random() * (maxTime - minTime) + minTime;
+}
+exports.getExponentialRetryTimeInMilliseconds = getExponentialRetryTimeInMilliseconds;
+/**
+ * Parses a env variable that is a number
+ */
+function parseEnvNumber(key) {
+    const value = Number(process.env[key]);
+    if (Number.isNaN(value) || value < 0) {
+        return undefined;
+    }
+    return value;
+}
+exports.parseEnvNumber = parseEnvNumber;
+/**
+ * Various utility functions to help with the necessary API calls
+ */
+function getApiVersion() {
+    return '6.0-preview';
+}
+exports.getApiVersion = getApiVersion;
+function isSuccessStatusCode(statusCode) {
+    if (!statusCode) {
+        return false;
+    }
+    return statusCode >= 200 && statusCode < 300;
+}
+exports.isSuccessStatusCode = isSuccessStatusCode;
+function isRetryableStatusCode(statusCode) {
+    if (!statusCode) {
+        return false;
+    }
+    const retryableStatusCodes = [
+        http_client_1.HttpCodes.BadGateway,
+        http_client_1.HttpCodes.ServiceUnavailable,
+        http_client_1.HttpCodes.GatewayTimeout
+    ];
+    return retryableStatusCodes.includes(statusCode);
+}
+exports.isRetryableStatusCode = isRetryableStatusCode;
+function isThrottledStatusCode(statusCode) {
+    if (!statusCode) {
+        return false;
+    }
+    // TODO, change when a new version of @actions/http-client gets released
+    return statusCode === 429;
+}
+exports.isThrottledStatusCode = isThrottledStatusCode;
+/**
+ * Attempts to get the retry-after value from a set of http headers. The retry time
+ * is orginally denoted in seconds, so if present, it is converted to milliseconds
+ * @param headers all the headers received when making an http call
+ */
+function tryGetRetryAfterValueTimeInMilliseconds(headers) {
+    if (headers['retry-after']) {
+        const retryTime = Number(headers['retry-after']);
+        if (!isNaN(retryTime)) {
+            core_1.info(`retry-after headers is present with a value of ${retryTime}`);
+            return retryTime * 1000;
+        }
+        core_1.info(`returned retry-after header value: ${retryTime} is non-numberic and cannot be used`);
+        return undefined;
+    }
+    core_1.info(`no retry-after header was found. Dumping all headers for diagnostic purposes`);
+    // eslint-disable-next-line no-console
+    console.log(headers);
+    return undefined;
+}
+exports.tryGetRetryAfterValueTimeInMilliseconds = tryGetRetryAfterValueTimeInMilliseconds;
+function getContentRange(start, end, total) {
+    // Format: `bytes start-end/fileSize
+    // start and end are inclusive
+    // For a 200 byte chunk starting at byte 0:
+    // Content-Range: bytes 0-199/200
+    return `bytes ${start}-${end}/${total}`;
+}
+exports.getContentRange = getContentRange;
+/**
+ * Sets all the necessary headers when making HTTP calls
+ * @param {string} contentType the type of content being uploaded
+ * @param {boolean} isKeepAlive is the same connection being used to make multiple calls
+ * @param {boolean} isGzip is the connection being used to upload GZip compressed content
+ * @param {number} uncompressedLength the original size of the content if something is being uploaded that has been compressed
+ * @param {number} contentLength the length of the content that is being uploaded
+ * @param {string} contentRange the range of the content that is being uploaded
+ * @returns appropriate request options to make a specific http call
+ */
+function getRequestOptions(contentType, isKeepAlive, isGzip, uncompressedLength, contentLength, contentRange) {
+    const requestOptions = {
+        // same Accept type for each http call that gets made
+        Accept: `application/json;api-version=${getApiVersion()}`
+    };
+    if (contentType) {
+        requestOptions['Content-Type'] = contentType;
+    }
+    if (isKeepAlive) {
+        requestOptions['Connection'] = 'Keep-Alive';
+        // keep alive for at least 10 seconds before closing the connection
+        requestOptions['Keep-Alive'] = '10';
+    }
+    if (isGzip) {
+        requestOptions['Content-Encoding'] = 'gzip';
+        requestOptions['x-tfs-filelength'] = uncompressedLength;
+    }
+    if (contentLength) {
+        requestOptions['Content-Length'] = contentLength;
+    }
+    if (contentRange) {
+        requestOptions['Content-Range'] = contentRange;
+    }
+    return requestOptions;
+}
+exports.getRequestOptions = getRequestOptions;
+function createHttpClient() {
+    return new http_client_1.HttpClient('action/artifact', [
+        new auth_1.BearerCredentialHandler(config_variables_1.getRuntimeToken())
+    ]);
+}
+exports.createHttpClient = createHttpClient;
+function getArtifactUrl() {
+    const artifactUrl = `${config_variables_1.getRuntimeUrl()}_apis/pipelines/workflows/${config_variables_1.getWorkFlowRunId()}/artifacts?api-version=${getApiVersion()}`;
+    core_1.debug(`Artifact Url: ${artifactUrl}`);
+    return artifactUrl;
+}
+exports.getArtifactUrl = getArtifactUrl;
+/**
+ * Invalid characters that cannot be in the artifact name or an uploaded file. Will be rejected
+ * from the server if attempted to be sent over. These characters are not allowed due to limitations with certain
+ * file systems such as NTFS. To maintain platform-agnostic behavior, all characters that are not supported by an
+ * individual filesystem/platform will not be supported on all fileSystems/platforms
+ *
+ * FilePaths can include characters such as \ and / which are not permitted in the artifact name alone
+ */
+const invalidArtifactFilePathCharacters = [
+    '"',
+    ':',
+    '<',
+    '>',
+    '|',
+    '*',
+    '?',
+    ' '
+];
+const invalidArtifactNameCharacters = [
+    ...invalidArtifactFilePathCharacters,
+    '\\',
+    '/'
+];
+/**
+ * Scans the name of the artifact to make sure there are no illegal characters
+ */
+function checkArtifactName(name) {
+    if (!name) {
+        throw new Error(`Artifact name: ${name}, is incorrectly provided`);
+    }
+    for (const invalidChar of invalidArtifactNameCharacters) {
+        if (name.includes(invalidChar)) {
+            throw new Error(`Artifact name is not valid: ${name}. Contains character: "${invalidChar}". Invalid artifact name characters include: ${invalidArtifactNameCharacters.toString()}.`);
+        }
+    }
+}
+exports.checkArtifactName = checkArtifactName;
+/**
+ * Scans the name of the filePath used to make sure there are no illegal characters
+ */
+function checkArtifactFilePath(path) {
+    if (!path) {
+        throw new Error(`Artifact path: ${path}, is incorrectly provided`);
+    }
+    for (const invalidChar of invalidArtifactFilePathCharacters) {
+        if (path.includes(invalidChar)) {
+            throw new Error(`Artifact path is not valid: ${path}. Contains character: "${invalidChar}". Invalid characters include: ${invalidArtifactFilePathCharacters.toString()}.`);
+        }
+    }
+}
+exports.checkArtifactFilePath = checkArtifactFilePath;
+function createDirectoriesForArtifact(directories) {
+    return __awaiter(this, void 0, void 0, function* () {
+        for (const directory of directories) {
+            yield fs_1.promises.mkdir(directory, {
+                recursive: true
+            });
+        }
+    });
+}
+exports.createDirectoriesForArtifact = createDirectoriesForArtifact;
+//# sourceMappingURL=utils.js.map
+
+/***/ }),
+
+/***/ 936:
 /***/ (function(__unusedmodule, exports, __webpack_require__) {
 
 "use strict";
@@ -295,7 +3031,7 @@ exports.pipeResponseToStream = pipeResponseToStream;
 var net = __webpack_require__(631);
 var tls = __webpack_require__(16);
 var http = __webpack_require__(605);
-var https = __webpack_require__(211);
+var https = __webpack_require__(34);
 var events = __webpack_require__(614);
 var assert = __webpack_require__(357);
 var util = __webpack_require__(669);
@@ -558,620 +3294,77 @@ exports.debug = debug; // for test
 
 /***/ }),
 
-/***/ 195:
-/***/ (function(__unusedmodule, exports, __webpack_require__) {
-
-"use strict";
-
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (Object.hasOwnProperty.call(mod, k)) result[k] = mod[k];
-    result["default"] = mod;
-    return result;
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-const path = __importStar(__webpack_require__(622));
-/**
- * Creates a specification for a set of files that will be downloaded
- * @param artifactName the name of the artifact
- * @param artifactEntries a set of container entries that describe that files that make up an artifact
- * @param downloadPath the path where the artifact will be downloaded to
- * @param includeRootDirectory specifies if there should be an extra directory (denoted by the artifact name) where the artifact files should be downloaded to
- */
-function getDownloadSpecification(artifactName, artifactEntries, downloadPath, includeRootDirectory) {
-    const directories = new Set();
-    const specifications = {
-        rootDownloadLocation: includeRootDirectory
-            ? path.join(downloadPath, artifactName)
-            : downloadPath,
-        directoryStructure: [],
-        filesToDownload: []
-    };
-    for (const entry of artifactEntries) {
-        // Ignore artifacts in the container that don't begin with the same name
-        if (entry.path.startsWith(`${artifactName}/`) ||
-            entry.path.startsWith(`${artifactName}\\`)) {
-            // normalize all separators to the local OS
-            const normalizedPathEntry = path.normalize(entry.path);
-            // entry.path always starts with the artifact name, if includeRootDirectory is false, remove the name from the beginning of the path
-            const filePath = path.join(downloadPath, includeRootDirectory
-                ? normalizedPathEntry
-                : normalizedPathEntry.replace(artifactName, ''));
-            // Case insensitive folder structure maintained in the backend, not every folder is created so the 'folder'
-            // itemType cannot be relied upon. The file must be used to determine the directory structure
-            if (entry.itemType === 'file') {
-                // Get the directories that we need to create from the filePath for each individual file
-                directories.add(path.dirname(filePath));
-                specifications.filesToDownload.push({
-                    sourceLocation: entry.contentLocation,
-                    targetPath: filePath
-                });
-            }
-        }
-    }
-    specifications.directoryStructure = Array.from(directories);
-    return specifications;
-}
-exports.getDownloadSpecification = getDownloadSpecification;
-//# sourceMappingURL=internal-download-specification.js.map
-
-/***/ }),
-
-/***/ 211:
-/***/ (function(module) {
-
-module.exports = require("https");
-
-/***/ }),
-
-/***/ 214:
+/***/ 974:
 /***/ (function(__unusedmodule, exports, __webpack_require__) {
 
 "use strict";
 
 Object.defineProperty(exports, "__esModule", { value: true });
-const internal_artifact_client_1 = __webpack_require__(369);
+const core_1 = __webpack_require__(211);
 /**
- * Constructs an ArtifactClient
- */
-function create() {
-    return internal_artifact_client_1.DefaultArtifactClient.create();
-}
-exports.create = create;
-//# sourceMappingURL=artifact-client.js.map
-
-/***/ }),
-
-/***/ 226:
-/***/ (function(__unusedmodule, exports) {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", { value: true });
-class BasicCredentialHandler {
-    constructor(username, password) {
-        this.username = username;
-        this.password = password;
-    }
-    prepareRequest(options) {
-        options.headers['Authorization'] = 'Basic ' + Buffer.from(this.username + ':' + this.password).toString('base64');
-    }
-    // This handler cannot handle 401
-    canHandleAuthentication(response) {
-        return false;
-    }
-    handleAuthentication(httpClient, requestInfo, objs) {
-        return null;
-    }
-}
-exports.BasicCredentialHandler = BasicCredentialHandler;
-class BearerCredentialHandler {
-    constructor(token) {
-        this.token = token;
-    }
-    // currently implements pre-authorization
-    // TODO: support preAuth = false where it hooks on 401
-    prepareRequest(options) {
-        options.headers['Authorization'] = 'Bearer ' + this.token;
-    }
-    // This handler cannot handle 401
-    canHandleAuthentication(response) {
-        return false;
-    }
-    handleAuthentication(httpClient, requestInfo, objs) {
-        return null;
-    }
-}
-exports.BearerCredentialHandler = BearerCredentialHandler;
-class PersonalAccessTokenCredentialHandler {
-    constructor(token) {
-        this.token = token;
-    }
-    // currently implements pre-authorization
-    // TODO: support preAuth = false where it hooks on 401
-    prepareRequest(options) {
-        options.headers['Authorization'] = 'Basic ' + Buffer.from('PAT:' + this.token).toString('base64');
-    }
-    // This handler cannot handle 401
-    canHandleAuthentication(response) {
-        return false;
-    }
-    handleAuthentication(httpClient, requestInfo, objs) {
-        return null;
-    }
-}
-exports.PersonalAccessTokenCredentialHandler = PersonalAccessTokenCredentialHandler;
-
-
-/***/ }),
-
-/***/ 357:
-/***/ (function(module) {
-
-module.exports = require("assert");
-
-/***/ }),
-
-/***/ 369:
-/***/ (function(__unusedmodule, exports, __webpack_require__) {
-
-"use strict";
-
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (Object.hasOwnProperty.call(mod, k)) result[k] = mod[k];
-    result["default"] = mod;
-    return result;
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-const core = __importStar(__webpack_require__(470));
-const internal_upload_specification_1 = __webpack_require__(82);
-const internal_upload_http_client_1 = __webpack_require__(715);
-const internal_utils_1 = __webpack_require__(931);
-const internal_download_http_client_1 = __webpack_require__(130);
-const internal_download_specification_1 = __webpack_require__(195);
-const internal_config_variables_1 = __webpack_require__(717);
-const path_1 = __webpack_require__(622);
-class DefaultArtifactClient {
-    /**
-     * Constructs a DefaultArtifactClient
-     */
-    static create() {
-        return new DefaultArtifactClient();
-    }
-    /**
-     * Uploads an artifact
-     */
-    uploadArtifact(name, files, rootDirectory, options) {
-        return __awaiter(this, void 0, void 0, function* () {
-            internal_utils_1.checkArtifactName(name);
-            // Get specification for the files being uploaded
-            const uploadSpecification = internal_upload_specification_1.getUploadSpecification(name, rootDirectory, files);
-            const uploadResponse = {
-                artifactName: name,
-                artifactItems: [],
-                size: 0,
-                failedItems: []
-            };
-            if (uploadSpecification.length === 0) {
-                core.warning(`No files found that can be uploaded`);
-            }
-            else {
-                // Create an entry for the artifact in the file container
-                const response = yield internal_upload_http_client_1.createArtifactInFileContainer(name);
-                if (!response.fileContainerResourceUrl) {
-                    core.debug(response.toString());
-                    throw new Error('No URL provided by the Artifact Service to upload an artifact to');
-                }
-                core.debug(`Upload Resource URL: ${response.fileContainerResourceUrl}`);
-                // Upload each of the files that were found concurrently
-                const uploadResult = yield internal_upload_http_client_1.uploadArtifactToFileContainer(response.fileContainerResourceUrl, uploadSpecification, options);
-                //Update the size of the artifact to indicate we are done uploading
-                yield internal_upload_http_client_1.patchArtifactSize(uploadResult.size, name);
-                core.info(`Finished uploading artifact ${name}. Reported size is ${uploadResult.size} bytes. There were ${uploadResult.failedItems.length} items that failed to upload`);
-                uploadResponse.artifactItems = uploadSpecification.map(item => item.absoluteFilePath);
-                uploadResponse.size = uploadResult.size;
-                uploadResponse.failedItems = uploadResult.failedItems;
-            }
-            return uploadResponse;
-        });
-    }
-    downloadArtifact(name, path, options) {
-        var _a;
-        return __awaiter(this, void 0, void 0, function* () {
-            const artifacts = yield internal_download_http_client_1.listArtifacts();
-            if (artifacts.count === 0) {
-                throw new Error(`Unable to find any artifacts for the associated workflow`);
-            }
-            const artifactToDownload = artifacts.value.find(artifact => {
-                return artifact.name === name;
-            });
-            if (!artifactToDownload) {
-                throw new Error(`Unable to find an artifact with the name: ${name}`);
-            }
-            const items = yield internal_download_http_client_1.getContainerItems(artifactToDownload.name, artifactToDownload.fileContainerResourceUrl);
-            if (!path) {
-                path = internal_config_variables_1.getWorkSpaceDirectory();
-            }
-            path = path_1.normalize(path);
-            path = path_1.resolve(path);
-            // During upload, empty directories are rejected by the remote server so there should be no artifacts that consist of only empty directories
-            const downloadSpecification = internal_download_specification_1.getDownloadSpecification(name, items.value, path, ((_a = options) === null || _a === void 0 ? void 0 : _a.createArtifactFolder) || false);
-            if (downloadSpecification.filesToDownload.length === 0) {
-                core.info(`No downloadable files were found for the artifact: ${artifactToDownload.name}`);
-            }
-            else {
-                // Create all necessary directories recursively before starting any download
-                yield internal_utils_1.createDirectoriesForArtifact(downloadSpecification.directoryStructure);
-                yield internal_download_http_client_1.downloadSingleArtifact(downloadSpecification.filesToDownload);
-            }
-            return {
-                artifactName: name,
-                downloadPath: downloadSpecification.rootDownloadLocation
-            };
-        });
-    }
-    downloadAllArtifacts(path) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const response = [];
-            const artifacts = yield internal_download_http_client_1.listArtifacts();
-            if (artifacts.count === 0) {
-                core.info('Unable to find any artifacts for the associated workflow');
-                return response;
-            }
-            if (!path) {
-                path = internal_config_variables_1.getWorkSpaceDirectory();
-            }
-            path = path_1.normalize(path);
-            path = path_1.resolve(path);
-            const ARTIFACT_CONCURRENCY = internal_config_variables_1.getDownloadArtifactConcurrency();
-            const parallelDownloads = [...new Array(ARTIFACT_CONCURRENCY).keys()];
-            let downloadedArtifacts = 0;
-            yield Promise.all(parallelDownloads.map(() => __awaiter(this, void 0, void 0, function* () {
-                while (downloadedArtifacts < artifacts.count) {
-                    const currentArtifactToDownload = artifacts.value[downloadedArtifacts];
-                    downloadedArtifacts += 1;
-                    // Get container entries for the specific artifact
-                    const items = yield internal_download_http_client_1.getContainerItems(currentArtifactToDownload.name, currentArtifactToDownload.fileContainerResourceUrl);
-                    // Promise.All is not correctly inferring that 'path' is no longer possibly undefined: https://github.com/microsoft/TypeScript/issues/34925
-                    const downloadSpecification = internal_download_specification_1.getDownloadSpecification(currentArtifactToDownload.name, items.value, path, // eslint-disable-line @typescript-eslint/no-non-null-assertion
-                    true);
-                    if (downloadSpecification.filesToDownload.length === 0) {
-                        core.info(`No downloadable files were found for any artifact ${currentArtifactToDownload.name}`);
-                    }
-                    else {
-                        yield internal_utils_1.createDirectoriesForArtifact(downloadSpecification.directoryStructure);
-                        yield internal_download_http_client_1.downloadSingleArtifact(downloadSpecification.filesToDownload);
-                    }
-                    response.push({
-                        artifactName: currentArtifactToDownload.name,
-                        downloadPath: downloadSpecification.rootDownloadLocation
-                    });
-                }
-            })));
-            return response;
-        });
-    }
-}
-exports.DefaultArtifactClient = DefaultArtifactClient;
-//# sourceMappingURL=internal-artifact-client.js.map
-
-/***/ }),
-
-/***/ 413:
-/***/ (function(module, __unusedexports, __webpack_require__) {
-
-module.exports = __webpack_require__(141);
-
-
-/***/ }),
-
-/***/ 431:
-/***/ (function(__unusedmodule, exports, __webpack_require__) {
-
-"use strict";
-
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (Object.hasOwnProperty.call(mod, k)) result[k] = mod[k];
-    result["default"] = mod;
-    return result;
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-const os = __importStar(__webpack_require__(87));
-/**
- * Commands
+ * Status Reporter that displays information about the progress/status of an artifact that is being uploaded or downloaded
  *
- * Command Format:
- *   ::name key=value,key=value::message
- *
- * Examples:
- *   ::warning::This is the message
- *   ::set-env name=MY_VAR::some value
+ * Every 10 seconds, the total status of the upload/download gets displayed. If there is a large file that is being uploaded,
+ * extra information about the individual status of an upload/download can also be displayed
  */
-function issueCommand(command, properties, message) {
-    const cmd = new Command(command, properties, message);
-    process.stdout.write(cmd.toString() + os.EOL);
-}
-exports.issueCommand = issueCommand;
-function issue(name, message = '') {
-    issueCommand(name, {}, message);
-}
-exports.issue = issue;
-const CMD_STRING = '::';
-class Command {
-    constructor(command, properties, message) {
-        if (!command) {
-            command = 'missing.command';
+class StatusReporter {
+    constructor() {
+        this.totalNumberOfFilesToProcess = 0;
+        this.processedCount = 0;
+        this.largeFiles = new Map();
+        this.totalFileStatus = undefined;
+        this.largeFileStatus = undefined;
+    }
+    setTotalNumberOfFilesToProcess(fileTotal) {
+        this.totalNumberOfFilesToProcess = fileTotal;
+    }
+    start() {
+        const _this = this;
+        // displays information about the total upload/download status every 10 seconds
+        this.totalFileStatus = setInterval(function () {
+            // display 1 decimal place without any rounding
+            const percentage = _this.formatPercentage(_this.processedCount, _this.totalNumberOfFilesToProcess);
+            core_1.info(`Total file(s): ${_this.totalNumberOfFilesToProcess} ---- Processed file #${_this.processedCount} (${percentage.slice(0, percentage.indexOf('.') + 2)}%)`);
+        }, 10000);
+        // displays extra information about any large files that take a significant amount of time to upload or download every 1 second
+        this.largeFileStatus = setInterval(function () {
+            for (const value of Array.from(_this.largeFiles.values())) {
+                core_1.info(value);
+            }
+            // delete all entires in the map after displaying the information so it will not be displayed again unless explicitly added
+            _this.largeFiles = new Map();
+        }, 1000);
+    }
+    // if there is a large file that is being uploaded in chunks, this is used to display extra information about the status of the upload
+    updateLargeFileStatus(fileName, numerator, denomiator) {
+        // display 1 decimal place without any rounding
+        const percentage = this.formatPercentage(numerator, denomiator);
+        const displayInformation = `Uploading ${fileName} (${percentage.slice(0, percentage.indexOf('.') + 2)}%)`;
+        // any previously added display information should be overwritten for the specific large file because a map is being used
+        this.largeFiles.set(fileName, displayInformation);
+    }
+    stop() {
+        if (this.totalFileStatus) {
+            clearInterval(this.totalFileStatus);
         }
-        this.command = command;
-        this.properties = properties;
-        this.message = message;
-    }
-    toString() {
-        let cmdStr = CMD_STRING + this.command;
-        if (this.properties && Object.keys(this.properties).length > 0) {
-            cmdStr += ' ';
-            let first = true;
-            for (const key in this.properties) {
-                if (this.properties.hasOwnProperty(key)) {
-                    const val = this.properties[key];
-                    if (val) {
-                        if (first) {
-                            first = false;
-                        }
-                        else {
-                            cmdStr += ',';
-                        }
-                        cmdStr += `${key}=${escapeProperty(val)}`;
-                    }
-                }
-            }
+        if (this.largeFileStatus) {
+            clearInterval(this.largeFileStatus);
         }
-        cmdStr += `${CMD_STRING}${escapeData(this.message)}`;
-        return cmdStr;
+    }
+    incrementProcessedCount() {
+        this.processedCount++;
+    }
+    formatPercentage(numerator, denominator) {
+        // toFixed() rounds, so use extra precision to display accurate information even though 4 decimal places are not displayed
+        return ((numerator / denominator) * 100).toFixed(4).toString();
     }
 }
-function escapeData(s) {
-    return (s || '')
-        .replace(/%/g, '%25')
-        .replace(/\r/g, '%0D')
-        .replace(/\n/g, '%0A');
-}
-function escapeProperty(s) {
-    return (s || '')
-        .replace(/%/g, '%25')
-        .replace(/\r/g, '%0D')
-        .replace(/\n/g, '%0A')
-        .replace(/:/g, '%3A')
-        .replace(/,/g, '%2C');
-}
-//# sourceMappingURL=command.js.map
+exports.StatusReporter = StatusReporter;
+//# sourceMappingURL=status-reporter.js.map
 
 /***/ }),
 
-/***/ 470:
-/***/ (function(__unusedmodule, exports, __webpack_require__) {
-
-"use strict";
-
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (Object.hasOwnProperty.call(mod, k)) result[k] = mod[k];
-    result["default"] = mod;
-    return result;
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-const command_1 = __webpack_require__(431);
-const os = __importStar(__webpack_require__(87));
-const path = __importStar(__webpack_require__(622));
-/**
- * The code to exit an action
- */
-var ExitCode;
-(function (ExitCode) {
-    /**
-     * A code indicating that the action was successful
-     */
-    ExitCode[ExitCode["Success"] = 0] = "Success";
-    /**
-     * A code indicating that the action was a failure
-     */
-    ExitCode[ExitCode["Failure"] = 1] = "Failure";
-})(ExitCode = exports.ExitCode || (exports.ExitCode = {}));
-//-----------------------------------------------------------------------
-// Variables
-//-----------------------------------------------------------------------
-/**
- * Sets env variable for this action and future actions in the job
- * @param name the name of the variable to set
- * @param val the value of the variable
- */
-function exportVariable(name, val) {
-    process.env[name] = val;
-    command_1.issueCommand('set-env', { name }, val);
-}
-exports.exportVariable = exportVariable;
-/**
- * Registers a secret which will get masked from logs
- * @param secret value of the secret
- */
-function setSecret(secret) {
-    command_1.issueCommand('add-mask', {}, secret);
-}
-exports.setSecret = setSecret;
-/**
- * Prepends inputPath to the PATH (for this action and future actions)
- * @param inputPath
- */
-function addPath(inputPath) {
-    command_1.issueCommand('add-path', {}, inputPath);
-    process.env['PATH'] = `${inputPath}${path.delimiter}${process.env['PATH']}`;
-}
-exports.addPath = addPath;
-/**
- * Gets the value of an input.  The value is also trimmed.
- *
- * @param     name     name of the input to get
- * @param     options  optional. See InputOptions.
- * @returns   string
- */
-function getInput(name, options) {
-    const val = process.env[`INPUT_${name.replace(/ /g, '_').toUpperCase()}`] || '';
-    if (options && options.required && !val) {
-        throw new Error(`Input required and not supplied: ${name}`);
-    }
-    return val.trim();
-}
-exports.getInput = getInput;
-/**
- * Sets the value of an output.
- *
- * @param     name     name of the output to set
- * @param     value    value to store
- */
-function setOutput(name, value) {
-    command_1.issueCommand('set-output', { name }, value);
-}
-exports.setOutput = setOutput;
-//-----------------------------------------------------------------------
-// Results
-//-----------------------------------------------------------------------
-/**
- * Sets the action status to failed.
- * When the action exits it will be with an exit code of 1
- * @param message add error issue message
- */
-function setFailed(message) {
-    process.exitCode = ExitCode.Failure;
-    error(message);
-}
-exports.setFailed = setFailed;
-//-----------------------------------------------------------------------
-// Logging Commands
-//-----------------------------------------------------------------------
-/**
- * Writes debug message to user log
- * @param message debug message
- */
-function debug(message) {
-    command_1.issueCommand('debug', {}, message);
-}
-exports.debug = debug;
-/**
- * Adds an error issue
- * @param message error issue message
- */
-function error(message) {
-    command_1.issue('error', message);
-}
-exports.error = error;
-/**
- * Adds an warning issue
- * @param message warning issue message
- */
-function warning(message) {
-    command_1.issue('warning', message);
-}
-exports.warning = warning;
-/**
- * Writes info to log with console.log.
- * @param message info message
- */
-function info(message) {
-    process.stdout.write(message + os.EOL);
-}
-exports.info = info;
-/**
- * Begin an output group.
- *
- * Output until the next `groupEnd` will be foldable in this group
- *
- * @param name The name of the output group
- */
-function startGroup(name) {
-    command_1.issue('group', name);
-}
-exports.startGroup = startGroup;
-/**
- * End an output group.
- */
-function endGroup() {
-    command_1.issue('endgroup');
-}
-exports.endGroup = endGroup;
-/**
- * Wrap an asynchronous function call in a group.
- *
- * Returns the same type as the function itself.
- *
- * @param name The name of the group
- * @param fn The function to wrap in the group
- */
-function group(name, fn) {
-    return __awaiter(this, void 0, void 0, function* () {
-        startGroup(name);
-        let result;
-        try {
-            result = yield fn();
-        }
-        finally {
-            endGroup();
-        }
-        return result;
-    });
-}
-exports.group = group;
-//-----------------------------------------------------------------------
-// Wrapper action state
-//-----------------------------------------------------------------------
-/**
- * Saves state for current action, the state can only be retrieved by this action's post job execution.
- *
- * @param     name     name of the state to store
- * @param     value    value to store
- */
-function saveState(name, value) {
-    command_1.issueCommand('save-state', { name }, value);
-}
-exports.saveState = saveState;
-/**
- * Gets the value of an state set by this action's main execution.
- *
- * @param     name     name of the state to get
- * @returns   string
- */
-function getState(name) {
-    return process.env[`STATE_${name}`] || '';
-}
-exports.getState = getState;
-//# sourceMappingURL=core.js.map
-
-/***/ }),
-
-/***/ 539:
+/***/ 985:
 /***/ (function(__unusedmodule, exports, __webpack_require__) {
 
 "use strict";
@@ -1179,8 +3372,8 @@ exports.getState = getState;
 Object.defineProperty(exports, "__esModule", { value: true });
 const url = __webpack_require__(835);
 const http = __webpack_require__(605);
-const https = __webpack_require__(211);
-const pm = __webpack_require__(950);
+const https = __webpack_require__(34);
+const pm = __webpack_require__(755);
 let tunnel;
 var HttpCodes;
 (function (HttpCodes) {
@@ -1561,7 +3754,7 @@ class HttpClient {
         if (useProxy) {
             // If using proxy, need tunnel
             if (!tunnel) {
-                tunnel = __webpack_require__(413);
+                tunnel = __webpack_require__(10);
             }
             const agentOptions = {
                 maxSockets: maxSockets,
@@ -1675,635 +3868,6 @@ class HttpClient {
     }
 }
 exports.HttpClient = HttpClient;
-
-
-/***/ }),
-
-/***/ 605:
-/***/ (function(module) {
-
-module.exports = require("http");
-
-/***/ }),
-
-/***/ 614:
-/***/ (function(module) {
-
-module.exports = require("events");
-
-/***/ }),
-
-/***/ 622:
-/***/ (function(module) {
-
-module.exports = require("path");
-
-/***/ }),
-
-/***/ 631:
-/***/ (function(module) {
-
-module.exports = require("net");
-
-/***/ }),
-
-/***/ 669:
-/***/ (function(module) {
-
-module.exports = require("util");
-
-/***/ }),
-
-/***/ 694:
-/***/ (function(__unusedmodule, exports) {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", { value: true });
-var Inputs;
-(function (Inputs) {
-    Inputs["Name"] = "name";
-    Inputs["Path"] = "path";
-})(Inputs = exports.Inputs || (exports.Inputs = {}));
-
-
-/***/ }),
-
-/***/ 715:
-/***/ (function(__unusedmodule, exports, __webpack_require__) {
-
-"use strict";
-
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (Object.hasOwnProperty.call(mod, k)) result[k] = mod[k];
-    result["default"] = mod;
-    return result;
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-const core_1 = __webpack_require__(470);
-const fs = __importStar(__webpack_require__(747));
-const url_1 = __webpack_require__(835);
-const internal_utils_1 = __webpack_require__(931);
-const internal_config_variables_1 = __webpack_require__(717);
-/**
- * Creates a file container for the new artifact in the remote blob storage/file service
- * @param {string} artifactName Name of the artifact being created
- * @returns The response from the Artifact Service if the file container was successfully created
- */
-function createArtifactInFileContainer(artifactName) {
-    return __awaiter(this, void 0, void 0, function* () {
-        const parameters = {
-            Type: 'actions_storage',
-            Name: artifactName
-        };
-        const data = JSON.stringify(parameters, null, 2);
-        const artifactUrl = internal_utils_1.getArtifactUrl();
-        const client = internal_utils_1.createHttpClient();
-        const requestOptions = internal_utils_1.getRequestOptions('application/json');
-        const rawResponse = yield client.post(artifactUrl, data, requestOptions);
-        const body = yield rawResponse.readBody();
-        if (internal_utils_1.isSuccessStatusCode(rawResponse.message.statusCode) && body) {
-            return JSON.parse(body);
-        }
-        else {
-            // eslint-disable-next-line no-console
-            console.log(rawResponse);
-            throw new Error(`Unable to create a container for the artifact ${artifactName}`);
-        }
-    });
-}
-exports.createArtifactInFileContainer = createArtifactInFileContainer;
-/**
- * Concurrently upload all of the files in chunks
- * @param {string} uploadUrl Base Url for the artifact that was created
- * @param {SearchResult[]} filesToUpload A list of information about the files being uploaded
- * @returns The size of all the files uploaded in bytes
- */
-function uploadArtifactToFileContainer(uploadUrl, filesToUpload, options) {
-    return __awaiter(this, void 0, void 0, function* () {
-        const client = internal_utils_1.createHttpClient();
-        const FILE_CONCURRENCY = internal_config_variables_1.getUploadFileConcurrency();
-        const CHUNK_CONCURRENCY = internal_config_variables_1.getUploadChunkConcurrency();
-        const MAX_CHUNK_SIZE = internal_config_variables_1.getUploadChunkSize();
-        core_1.debug(`File Concurrency: ${FILE_CONCURRENCY}, Chunk Concurrency: ${CHUNK_CONCURRENCY} and Chunk Size: ${MAX_CHUNK_SIZE}`);
-        const parameters = [];
-        // by default, file uploads will continue if there is an error unless specified differently in the options
-        let continueOnError = true;
-        if (options) {
-            if (options.continueOnError === false) {
-                continueOnError = false;
-            }
-        }
-        // Prepare the necessary parameters to upload all the files
-        for (const file of filesToUpload) {
-            const resourceUrl = new url_1.URL(uploadUrl);
-            resourceUrl.searchParams.append('itemPath', file.uploadFilePath);
-            parameters.push({
-                file: file.absoluteFilePath,
-                resourceUrl: resourceUrl.toString(),
-                restClient: client,
-                concurrency: CHUNK_CONCURRENCY,
-                maxChunkSize: MAX_CHUNK_SIZE,
-                continueOnError
-            });
-        }
-        const parallelUploads = [...new Array(FILE_CONCURRENCY).keys()];
-        const failedItemsToReport = [];
-        let uploadedFiles = 0;
-        let fileSizes = 0;
-        let abortPendingFileUploads = false;
-        // Only allow a certain amount of files to be uploaded at once, this is done to reduce potential errors
-        yield Promise.all(parallelUploads.map(() => __awaiter(this, void 0, void 0, function* () {
-            while (uploadedFiles < filesToUpload.length) {
-                const currentFileParameters = parameters[uploadedFiles];
-                uploadedFiles += 1;
-                if (abortPendingFileUploads) {
-                    failedItemsToReport.push(currentFileParameters.file);
-                    continue;
-                }
-                const uploadFileResult = yield uploadFileAsync(currentFileParameters);
-                fileSizes += uploadFileResult.successfulUploadSize;
-                if (uploadFileResult.isSuccess === false) {
-                    failedItemsToReport.push(currentFileParameters.file);
-                    if (!continueOnError) {
-                        // Existing uploads will be able to finish however all pending uploads will fail fast
-                        abortPendingFileUploads = true;
-                    }
-                }
-            }
-        })));
-        core_1.info(`Total size of all the files uploaded is ${fileSizes} bytes`);
-        return {
-            size: fileSizes,
-            failedItems: failedItemsToReport
-        };
-    });
-}
-exports.uploadArtifactToFileContainer = uploadArtifactToFileContainer;
-/**
- * Asynchronously uploads a file. If the file is bigger than the max chunk size it will be uploaded via multiple calls
- * @param {UploadFileParameters} parameters Information about the file that needs to be uploaded
- * @returns The size of the file that was uploaded in bytes along with any failed uploads
- */
-function uploadFileAsync(parameters) {
-    return __awaiter(this, void 0, void 0, function* () {
-        const fileSize = fs.statSync(parameters.file).size;
-        const parallelUploads = [...new Array(parameters.concurrency).keys()];
-        let offset = 0;
-        let isUploadSuccessful = true;
-        let failedChunkSizes = 0;
-        let abortFileUpload = false;
-        yield Promise.all(parallelUploads.map(() => __awaiter(this, void 0, void 0, function* () {
-            while (offset < fileSize) {
-                const chunkSize = Math.min(fileSize - offset, parameters.maxChunkSize);
-                if (abortFileUpload) {
-                    // if we don't want to continue on error, any pending upload chunk will be marked as failed
-                    failedChunkSizes += chunkSize;
-                    continue;
-                }
-                const start = offset;
-                const end = offset + chunkSize - 1;
-                offset += parameters.maxChunkSize;
-                const chunk = fs.createReadStream(parameters.file, {
-                    start,
-                    end,
-                    autoClose: false
-                });
-                const result = yield uploadChunk(parameters.restClient, parameters.resourceUrl, chunk, start, end, fileSize);
-                if (!result) {
-                    /**
-                     * Chunk failed to upload, report as failed and do not continue uploading any more chunks for the file. It is possible that part of a chunk was
-                     * successfully uploaded so the server may report a different size for what was uploaded
-                     **/
-                    isUploadSuccessful = false;
-                    failedChunkSizes += chunkSize;
-                    core_1.warning(`Aborting upload for ${parameters.file} due to failure`);
-                    abortFileUpload = true;
-                }
-            }
-        })));
-        return {
-            isSuccess: isUploadSuccessful,
-            successfulUploadSize: fileSize - failedChunkSizes
-        };
-    });
-}
-/**
- * Uploads a chunk of an individual file to the specified resourceUrl. If the upload fails and the status code
- * indicates a retryable status, we try to upload the chunk as well
- * @param {HttpClient} restClient RestClient that will be making the appropriate HTTP call
- * @param {string} resourceUrl Url of the resource that the chunk will be uploaded to
- * @param {NodeJS.ReadableStream} data Stream of the file that will be uploaded
- * @param {number} start Starting byte index of file that the chunk belongs to
- * @param {number} end Ending byte index of file that the chunk belongs to
- * @param {number} totalSize Total size of the file in bytes that is being uploaded
- * @returns if the chunk was successfully uploaded
- */
-function uploadChunk(restClient, resourceUrl, data, start, end, totalSize) {
-    return __awaiter(this, void 0, void 0, function* () {
-        core_1.info(`Uploading chunk of size ${end -
-            start +
-            1} bytes at offset ${start} with content range: ${internal_utils_1.getContentRange(start, end, totalSize)}`);
-        const requestOptions = internal_utils_1.getRequestOptions('application/octet-stream', totalSize, internal_utils_1.getContentRange(start, end, totalSize));
-        const uploadChunkRequest = () => __awaiter(this, void 0, void 0, function* () {
-            return yield restClient.sendStream('PUT', resourceUrl, data, requestOptions);
-        });
-        const response = yield uploadChunkRequest();
-        if (internal_utils_1.isSuccessStatusCode(response.message.statusCode)) {
-            core_1.debug(`Chunk for ${start}:${end} was successfully uploaded to ${resourceUrl}`);
-            return true;
-        }
-        else if (internal_utils_1.isRetryableStatusCode(response.message.statusCode)) {
-            core_1.info(`Received http ${response.message.statusCode} during chunk upload, will retry at offset ${start} after 10 seconds.`);
-            yield new Promise(resolve => setTimeout(resolve, 10000));
-            const retryResponse = yield uploadChunkRequest();
-            if (internal_utils_1.isSuccessStatusCode(retryResponse.message.statusCode)) {
-                return true;
-            }
-            else {
-                core_1.info(`Unable to upload chunk even after retrying`);
-                // eslint-disable-next-line no-console
-                console.log(response);
-                return false;
-            }
-        }
-        // Upload must have failed spectacularly somehow, log full result for diagnostic purposes
-        // eslint-disable-next-line no-console
-        console.log(response);
-        return false;
-    });
-}
-/**
- * Updates the size of the artifact from -1 which was initially set when the container was first created for the artifact.
- * Updating the size indicates that we are done uploading all the contents of the artifact. A server side check will be run
- * to check that the artifact size is correct for billing purposes
- */
-function patchArtifactSize(size, artifactName) {
-    return __awaiter(this, void 0, void 0, function* () {
-        const client = internal_utils_1.createHttpClient();
-        const requestOptions = internal_utils_1.getRequestOptions('application/json');
-        const resourceUrl = new url_1.URL(internal_utils_1.getArtifactUrl());
-        resourceUrl.searchParams.append('artifactName', artifactName);
-        const parameters = { Size: size };
-        const data = JSON.stringify(parameters, null, 2);
-        core_1.debug(`URL is ${resourceUrl.toString()}`);
-        const rawResponse = yield client.patch(resourceUrl.toString(), data, requestOptions);
-        const body = yield rawResponse.readBody();
-        if (internal_utils_1.isSuccessStatusCode(rawResponse.message.statusCode)) {
-            core_1.debug(`Artifact ${artifactName} has been successfully uploaded, total size ${size}`);
-            core_1.debug(body);
-        }
-        else if (rawResponse.message.statusCode === 404) {
-            throw new Error(`An Artifact with the name ${artifactName} was not found`);
-        }
-        else {
-            // eslint-disable-next-line no-console
-            console.log(body);
-            throw new Error(`Unable to finish uploading artifact ${artifactName}`);
-        }
-    });
-}
-exports.patchArtifactSize = patchArtifactSize;
-//# sourceMappingURL=internal-upload-http-client.js.map
-
-/***/ }),
-
-/***/ 717:
-/***/ (function(__unusedmodule, exports) {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", { value: true });
-function getUploadFileConcurrency() {
-    return 2;
-}
-exports.getUploadFileConcurrency = getUploadFileConcurrency;
-function getUploadChunkConcurrency() {
-    return 1;
-}
-exports.getUploadChunkConcurrency = getUploadChunkConcurrency;
-function getUploadChunkSize() {
-    return 4 * 1024 * 1024; // 4 MB Chunks
-}
-exports.getUploadChunkSize = getUploadChunkSize;
-function getDownloadFileConcurrency() {
-    return 2;
-}
-exports.getDownloadFileConcurrency = getDownloadFileConcurrency;
-function getDownloadArtifactConcurrency() {
-    // when downloading all artifact at once, this is number of concurrent artifacts being downloaded
-    return 1;
-}
-exports.getDownloadArtifactConcurrency = getDownloadArtifactConcurrency;
-function getRuntimeToken() {
-    const token = process.env['ACTIONS_RUNTIME_TOKEN'];
-    if (!token) {
-        throw new Error('Unable to get ACTIONS_RUNTIME_TOKEN env variable');
-    }
-    return token;
-}
-exports.getRuntimeToken = getRuntimeToken;
-function getRuntimeUrl() {
-    const runtimeUrl = process.env['ACTIONS_RUNTIME_URL'];
-    if (!runtimeUrl) {
-        throw new Error('Unable to get ACTIONS_RUNTIME_URL env variable');
-    }
-    return runtimeUrl;
-}
-exports.getRuntimeUrl = getRuntimeUrl;
-function getWorkFlowRunId() {
-    const workFlowRunId = process.env['GITHUB_RUN_ID'];
-    if (!workFlowRunId) {
-        throw new Error('Unable to get GITHUB_RUN_ID env variable');
-    }
-    return workFlowRunId;
-}
-exports.getWorkFlowRunId = getWorkFlowRunId;
-function getWorkSpaceDirectory() {
-    const workspaceDirectory = process.env['GITHUB_WORKSPACE'];
-    if (!workspaceDirectory) {
-        throw new Error('Unable to get GITHUB_WORKSPACE env variable');
-    }
-    return workspaceDirectory;
-}
-exports.getWorkSpaceDirectory = getWorkSpaceDirectory;
-//# sourceMappingURL=internal-config-variables.js.map
-
-/***/ }),
-
-/***/ 747:
-/***/ (function(module) {
-
-module.exports = require("fs");
-
-/***/ }),
-
-/***/ 799:
-/***/ (function(__unusedmodule, exports, __webpack_require__) {
-
-"use strict";
-
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (Object.hasOwnProperty.call(mod, k)) result[k] = mod[k];
-    result["default"] = mod;
-    return result;
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-const core = __importStar(__webpack_require__(470));
-const artifact = __importStar(__webpack_require__(214));
-const constants_1 = __webpack_require__(694);
-function run() {
-    return __awaiter(this, void 0, void 0, function* () {
-        try {
-            const name = core.getInput(constants_1.Inputs.Name, { required: false });
-            const path = core.getInput(constants_1.Inputs.Path, { required: false });
-            const artifactClient = artifact.create();
-            if (!name) {
-                // download all artifacts
-                const downloadResponse = yield artifactClient.downloadAllArtifacts(path);
-                core.info(`There were ${downloadResponse.length} artifacts downloaded`);
-                for (const artifact of downloadResponse) {
-                    core.info(`Artifact ${artifact.artifactName} was downloaded to ${artifact.downloadPath}`);
-                }
-            }
-            else {
-                // download a single artifact
-                const downloadOptions = {
-                    createArtifactFolder: false
-                };
-                const downloadResponse = yield artifactClient.downloadArtifact(name, path, downloadOptions);
-                core.info(`Artifact ${downloadResponse.artifactName} was downloaded to ${downloadResponse.downloadPath}`);
-            }
-            core.info('Artifact download has finished successfully');
-        }
-        catch (err) {
-            core.setFailed(err.message);
-        }
-    });
-}
-run();
-
-
-/***/ }),
-
-/***/ 835:
-/***/ (function(module) {
-
-module.exports = require("url");
-
-/***/ }),
-
-/***/ 931:
-/***/ (function(__unusedmodule, exports, __webpack_require__) {
-
-"use strict";
-
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-const core_1 = __webpack_require__(470);
-const fs_1 = __webpack_require__(747);
-const http_client_1 = __webpack_require__(539);
-const auth_1 = __webpack_require__(226);
-const internal_config_variables_1 = __webpack_require__(717);
-/**
- * Parses a env variable that is a number
- */
-function parseEnvNumber(key) {
-    const value = Number(process.env[key]);
-    if (Number.isNaN(value) || value < 0) {
-        return undefined;
-    }
-    return value;
-}
-exports.parseEnvNumber = parseEnvNumber;
-/**
- * Various utility functions to help with the necessary API calls
- */
-function getApiVersion() {
-    return '6.0-preview';
-}
-exports.getApiVersion = getApiVersion;
-function isSuccessStatusCode(statusCode) {
-    if (!statusCode) {
-        return false;
-    }
-    return statusCode >= 200 && statusCode < 300;
-}
-exports.isSuccessStatusCode = isSuccessStatusCode;
-function isRetryableStatusCode(statusCode) {
-    if (!statusCode) {
-        return false;
-    }
-    const retryableStatusCodes = [
-        http_client_1.HttpCodes.BadGateway,
-        http_client_1.HttpCodes.ServiceUnavailable,
-        http_client_1.HttpCodes.GatewayTimeout
-    ];
-    return retryableStatusCodes.includes(statusCode);
-}
-exports.isRetryableStatusCode = isRetryableStatusCode;
-function getContentRange(start, end, total) {
-    // Format: `bytes start-end/fileSize
-    // start and end are inclusive
-    // For a 200 byte chunk starting at byte 0:
-    // Content-Range: bytes 0-199/200
-    return `bytes ${start}-${end}/${total}`;
-}
-exports.getContentRange = getContentRange;
-function getRequestOptions(contentType, contentLength, contentRange) {
-    const requestOptions = {
-        Accept: `application/json;api-version=${getApiVersion()}`
-    };
-    if (contentType) {
-        requestOptions['Content-Type'] = contentType;
-    }
-    if (contentLength) {
-        requestOptions['Content-Length'] = contentLength;
-    }
-    if (contentRange) {
-        requestOptions['Content-Range'] = contentRange;
-    }
-    return requestOptions;
-}
-exports.getRequestOptions = getRequestOptions;
-function createHttpClient() {
-    return new http_client_1.HttpClient('action/artifact', [
-        new auth_1.BearerCredentialHandler(internal_config_variables_1.getRuntimeToken())
-    ]);
-}
-exports.createHttpClient = createHttpClient;
-function getArtifactUrl() {
-    const artifactUrl = `${internal_config_variables_1.getRuntimeUrl()}_apis/pipelines/workflows/${internal_config_variables_1.getWorkFlowRunId()}/artifacts?api-version=${getApiVersion()}`;
-    core_1.debug(`Artifact Url: ${artifactUrl}`);
-    return artifactUrl;
-}
-exports.getArtifactUrl = getArtifactUrl;
-/**
- * Invalid characters that cannot be in the artifact name or an uploaded file. Will be rejected
- * from the server if attempted to be sent over. These characters are not allowed due to limitations with certain
- * file systems such as NTFS. To maintain platform-agnostic behavior, all characters that are not supported by an
- * individual filesystem/platform will not be supported on all fileSystems/platforms
- */
-const invalidCharacters = ['\\', '/', '"', ':', '<', '>', '|', '*', '?', ' '];
-/**
- * Scans the name of the item being uploaded to make sure there are no illegal characters
- */
-function checkArtifactName(name) {
-    if (!name) {
-        throw new Error(`Artifact name: ${name}, is incorrectly provided`);
-    }
-    for (const invalidChar of invalidCharacters) {
-        if (name.includes(invalidChar)) {
-            throw new Error(`Artifact name is not valid: ${name}. Contains character: "${invalidChar}". Invalid characters include: ${invalidCharacters.toString()}.`);
-        }
-    }
-}
-exports.checkArtifactName = checkArtifactName;
-function createDirectoriesForArtifact(directories) {
-    return __awaiter(this, void 0, void 0, function* () {
-        for (const directory of directories) {
-            yield fs_1.promises.mkdir(directory, {
-                recursive: true
-            });
-        }
-    });
-}
-exports.createDirectoriesForArtifact = createDirectoriesForArtifact;
-//# sourceMappingURL=internal-utils.js.map
-
-/***/ }),
-
-/***/ 950:
-/***/ (function(__unusedmodule, exports, __webpack_require__) {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", { value: true });
-const url = __webpack_require__(835);
-function getProxyUrl(reqUrl) {
-    let usingSsl = reqUrl.protocol === 'https:';
-    let proxyUrl;
-    if (checkBypass(reqUrl)) {
-        return proxyUrl;
-    }
-    let proxyVar;
-    if (usingSsl) {
-        proxyVar = process.env["https_proxy"] ||
-            process.env["HTTPS_PROXY"];
-    }
-    else {
-        proxyVar = process.env["http_proxy"] ||
-            process.env["HTTP_PROXY"];
-    }
-    if (proxyVar) {
-        proxyUrl = url.parse(proxyVar);
-    }
-    return proxyUrl;
-}
-exports.getProxyUrl = getProxyUrl;
-function checkBypass(reqUrl) {
-    if (!reqUrl.hostname) {
-        return false;
-    }
-    let noProxy = process.env["no_proxy"] || process.env["NO_PROXY"] || '';
-    if (!noProxy) {
-        return false;
-    }
-    // Determine the request port
-    let reqPort;
-    if (reqUrl.port) {
-        reqPort = Number(reqUrl.port);
-    }
-    else if (reqUrl.protocol === 'http:') {
-        reqPort = 80;
-    }
-    else if (reqUrl.protocol === 'https:') {
-        reqPort = 443;
-    }
-    // Format the request hostname and hostname with port
-    let upperReqHosts = [reqUrl.hostname.toUpperCase()];
-    if (typeof reqPort === 'number') {
-        upperReqHosts.push(`${upperReqHosts[0]}:${reqPort}`);
-    }
-    // Compare request host against noproxy
-    for (let upperNoProxyItem of noProxy.split(',').map(x => x.trim().toUpperCase()).filter(x => x)) {
-        if (upperReqHosts.some(x => x === upperNoProxyItem)) {
-            return true;
-        }
-    }
-    return false;
-}
-exports.checkBypass = checkBypass;
 
 
 /***/ })
