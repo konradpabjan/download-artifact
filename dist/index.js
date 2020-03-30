@@ -783,7 +783,7 @@ const stat = util_1.promisify(fs.stat);
 class UploadHttpClient {
     constructor() {
         this.uploadHttpManager = new http_manager_1.HttpManager(config_variables_1.getUploadFileConcurrency());
-        this.statusReporter = new status_reporter_1.StatusReporter();
+        this.statusReporter = new status_reporter_1.StatusReporter(10000);
     }
     /**
      * Creates a file container for the new artifact in the remote blob storage/file service
@@ -1691,7 +1691,8 @@ const core_1 = __webpack_require__(211);
 class DownloadHttpClient {
     constructor() {
         this.downloadHttpManager = new http_manager_1.HttpManager(config_variables_1.getDownloadFileConcurrency());
-        this.statusReporter = new status_reporter_1.StatusReporter();
+        // downloads are usually significantly faster than uploads so display status information every second
+        this.statusReporter = new status_reporter_1.StatusReporter(1000);
     }
     /**
      * Gets a list of all artifacts that are in a specific container
@@ -1743,7 +1744,7 @@ class DownloadHttpClient {
         return __awaiter(this, void 0, void 0, function* () {
             const DOWNLOAD_CONCURRENCY = config_variables_1.getDownloadFileConcurrency();
             // limit the number of files downloaded at a single time
-            core_1.info(`Download file concurrency is set to ${DOWNLOAD_CONCURRENCY}`);
+            core_1.debug(`Download file concurrency is set to ${DOWNLOAD_CONCURRENCY}`);
             const parallelDownloads = [...new Array(DOWNLOAD_CONCURRENCY).keys()];
             let currentFile = 0;
             let downloadedFiles = 0;
@@ -3311,24 +3312,25 @@ const core_1 = __webpack_require__(211);
  * extra information about the individual status of an upload/download can also be displayed
  */
 class StatusReporter {
-    constructor() {
+    constructor(displayFrequencyInMilliseconds) {
         this.totalNumberOfFilesToProcess = 0;
         this.processedCount = 0;
         this.largeFiles = new Map();
         this.totalFileStatus = undefined;
         this.largeFileStatus = undefined;
+        this.displayFrequencyInMilliseconds = displayFrequencyInMilliseconds;
     }
     setTotalNumberOfFilesToProcess(fileTotal) {
         this.totalNumberOfFilesToProcess = fileTotal;
     }
     start() {
         const _this = this;
-        // displays information about the total upload/download status every 10 seconds
+        // displays information about the total upload/download status every 5 seconds
         this.totalFileStatus = setInterval(function () {
             // display 1 decimal place without any rounding
             const percentage = _this.formatPercentage(_this.processedCount, _this.totalNumberOfFilesToProcess);
-            core_1.info(`Total file(s): ${_this.totalNumberOfFilesToProcess} ---- Processed file #${_this.processedCount} (${percentage.slice(0, percentage.indexOf('.') + 2)}%)`);
-        }, 10000);
+            core_1.info(`Total file count: ${_this.totalNumberOfFilesToProcess} ---- Processed file #${_this.processedCount} (${percentage.slice(0, percentage.indexOf('.') + 2)}%)`);
+        }, this.displayFrequencyInMilliseconds);
         // displays extra information about any large files that take a significant amount of time to upload or download every 1 second
         this.largeFileStatus = setInterval(function () {
             for (const value of Array.from(_this.largeFiles.values())) {
