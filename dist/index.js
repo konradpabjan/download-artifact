@@ -1792,6 +1792,7 @@ class DownloadHttpClient {
             });
             // checks the response headers to determine if the file was compressed using gzip
             const isGzip = (headers) => {
+                console.log(headers);
                 return ('content-encoding' in headers && headers['content-encoding'] === 'gzip');
             };
             // checks if the retry limit has been reached. If there have been too many retries, fail so the download stops
