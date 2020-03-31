@@ -1797,6 +1797,7 @@ class DownloadHttpClient {
             });
             // maybe?
             requestOptions['Accept-Encoding'] = 'gzip';
+            requestOptions['Accept'] = 'application/octet-stream;api-version=6.0-preview';
             // checks the response headers to determine if the file was compressed using gzip
             const isGzip = (headers) => {
                 console.log(headers);
