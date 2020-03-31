@@ -1688,6 +1688,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const fs = __importStar(__webpack_require__(747));
+const zlib = __importStar(__webpack_require__(761));
 const utils_1 = __webpack_require__(844);
 const url_1 = __webpack_require__(835);
 const status_reporter_1 = __webpack_require__(974);
@@ -1696,6 +1697,7 @@ const http_manager_1 = __webpack_require__(114);
 const config_variables_1 = __webpack_require__(706);
 const core_1 = __webpack_require__(211);
 const util_1 = __webpack_require__(669);
+const stream = __importStar(__webpack_require__(413));
 const stream_1 = __webpack_require__(413);
 const pipe = util_1.promisify(stream_1.pipeline);
 class DownloadHttpClient {
@@ -1786,7 +1788,8 @@ class DownloadHttpClient {
         return __awaiter(this, void 0, void 0, function* () {
             let retryCount = 0;
             const retryLimit = config_variables_1.getRetryLimit();
-            const stream = fs.createWriteStream(downloadPath);
+            const destinationStream = fs.createWriteStream(downloadPath);
+            const tempStream = new stream.PassThrough();
             const requestOptions = utils_1.getRequestOptions('application/octet-stream', true);
             // a single GET request is used to download a file
             const makeDownloadRequest = () => __awaiter(this, void 0, void 0, function* () {
@@ -1833,10 +1836,11 @@ class DownloadHttpClient {
                     // Always read the body of the response. There is potential for a resource leak if the body is not read which will
                     // result in the connection remaining open along with unintended consequences when trying to dispose of the client
                     const test = yield response.readBody();
-                    core_1.info(test);
+                    tempStream.write(test);
+                    tempStream.end();
                     if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
                         core_1.info('piping response to a stream!');
-                        yield this.pipeResponseToStream(response, stream, isGzip(response.message.headers));
+                        yield this.pipeResponseToStream(response, tempStream, destinationStream, isGzip(response.message.headers));
                         return;
                     }
                     else if (utils_1.isThrottledStatusCode(response.message.statusCode)) {
@@ -1883,19 +1887,19 @@ class DownloadHttpClient {
      * @param stream the stream where the file should be written to
      * @param isGzip does the response need to be be uncompressed
      */
-    pipeResponseToStream(response, destinationStream, isGzip) {
+    pipeResponseToStream(response, tempStream, destinationStream, isGzip) {
         return __awaiter(this, void 0, void 0, function* () {
             console.log(response);
             yield new Promise(resolve => {
                 //if (isGzip) {
                 // pipe the response into gunzip to decompress
-                //  const gunzip = zlib.createGunzip()
+                const gunzip = zlib.createGunzip();
                 //  response.pipe()
-                //  pipe(response.message, gunzip, destinationStream)
+                pipe(tempStream, gunzip, destinationStream);
                 //} else {
-                response.message.pipe(destinationStream).on('close', () => {
-                    resolve();
-                });
+                //  .pipe(destinationStream).on('close', () => {
+                //    resolve()
+                //  })
                 //}
             });
             return;
