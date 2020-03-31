@@ -1832,7 +1832,8 @@ class DownloadHttpClient {
                     core_1.debug(`Http request has finished for ${artifactLocation}, will now try to process to ${downloadPath}`);
                     // Always read the body of the response. There is potential for a resource leak if the body is not read which will
                     // result in the connection remaining open along with unintended consequences when trying to dispose of the client
-                    yield response.readBody();
+                    const test = yield response.readBody();
+                    core_1.info(test);
                     if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
                         core_1.info('piping response to a stream!');
                         yield this.pipeResponseToStream(response, stream, isGzip(response.message.headers));
