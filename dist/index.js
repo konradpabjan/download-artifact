@@ -1907,7 +1907,6 @@ class DownloadHttpClient {
                     const buffer = Buffer.from(body, 'hex');
                     console.log('this is the buffer');
                     console.log(buffer);
-                    console.log(buffer.toString());
                     const passThrough = new stream.PassThrough();
                     passThrough.end(buffer);
                     pipe(passThrough, gunzip, destinationStream);
