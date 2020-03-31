@@ -1837,8 +1837,8 @@ class DownloadHttpClient {
                     // Always read the body of the response. There is potential for a resource leak if the body is not read which will
                     // result in the connection remaining open along with unintended consequences when trying to dispose of the client
                     yield response.readBody();
-                    tempStream.write(response.message);
-                    tempStream.end();
+                    //tempStream.write(response.message)
+                    //tempStream.end()
                     if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
                         core_1.info('piping response to a stream!');
                         yield this.pipeResponseToStream(response, tempStream, destinationStream, isGzip(response.message.headers));
