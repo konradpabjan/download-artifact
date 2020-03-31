@@ -1910,7 +1910,6 @@ class DownloadHttpClient {
                     const passThrough = new stream.PassThrough();
                     passThrough.end(buffer);
                     pipe(passThrough, gunzip, destinationStream);
-                    response.message.pipe(gunzip);
                 }
                 else {
                     response.message.pipe(destinationStream).on('close', () => {
