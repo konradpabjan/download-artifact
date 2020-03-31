@@ -1696,6 +1696,9 @@ const perf_hooks_1 = __webpack_require__(630);
 const http_manager_1 = __webpack_require__(114);
 const config_variables_1 = __webpack_require__(706);
 const core_1 = __webpack_require__(211);
+const util_1 = __webpack_require__(669);
+const stream_1 = __webpack_require__(413);
+const pipe = util_1.promisify(stream_1.pipeline);
 class DownloadHttpClient {
     constructor() {
         this.downloadHttpManager = new http_manager_1.HttpManager(config_variables_1.getDownloadFileConcurrency());
@@ -1889,10 +1892,6 @@ class DownloadHttpClient {
                     response.message
                         .pipe(gunzip).on('close', () => __awaiter(this, void 0, void 0, function* () {
                         core_1.info("we are done pipping to gunzip");
-                        yield gunzip.pipe(stream).on('close', () => {
-                            core_1.info("done!");
-                            resolve();
-                        });
                     }));
                 }
                 else {
@@ -1901,7 +1900,6 @@ class DownloadHttpClient {
                     });
                 }
             });
-            core_1.debug(`finished pipping response to stream, was ${isGzip}`);
             return;
         });
     }
