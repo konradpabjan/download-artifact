@@ -1834,7 +1834,7 @@ class DownloadHttpClient {
                     // result in the connection remaining open along with unintended consequences when trying to dispose of the client
                     yield response.readBody();
                     if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
-                        core_1.info('piping response to a stream');
+                        core_1.info('piping response to a stream!');
                         yield this.pipeResponseToStream(response, stream, isGzip(response.message.headers));
                         return;
                     }
