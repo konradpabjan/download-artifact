@@ -1894,9 +1894,7 @@ class DownloadHttpClient {
                 if (isGzip) {
                     // pipe the response into gunzip to decompress
                     const gunzip = zlib.createGunzip();
-                    response.message.pipe(gunzip).pipe(destinationStream).on('close', () => {
-                        resolve();
-                    });
+                    return pipe(response.message, gunzip, destinationStream);
                 }
                 else {
                     tempStream.pipe(destinationStream).on('close', () => {
