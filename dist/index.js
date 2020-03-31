@@ -1688,6 +1688,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const fs = __importStar(__webpack_require__(747));
+const zlib = __importStar(__webpack_require__(761));
 const utils_1 = __webpack_require__(844);
 const url_1 = __webpack_require__(835);
 const status_reporter_1 = __webpack_require__(974);
@@ -1889,18 +1890,19 @@ class DownloadHttpClient {
      */
     pipeResponseToStream(response, tempStream, destinationStream, isGzip) {
         return __awaiter(this, void 0, void 0, function* () {
-            console.log(response);
             yield new Promise(resolve => {
-                //if (isGzip) {
-                // pipe the response into gunzip to decompress
-                //  const gunzip = zlib.createGunzip()
-                //  response.pipe()
-                //pipe(tempStream, gunzip, destinationStream)
-                //} else {
-                tempStream.pipe(destinationStream).on('close', () => {
-                    resolve();
-                });
-                //}
+                if (isGzip) {
+                    // pipe the response into gunzip to decompress
+                    const gunzip = zlib.createGunzip();
+                    response.message.pipe(gunzip).pipe(destinationStream).on('close', () => {
+                        resolve();
+                    });
+                }
+                else {
+                    tempStream.pipe(destinationStream).on('close', () => {
+                        resolve();
+                    });
+                }
             });
             return;
         });
