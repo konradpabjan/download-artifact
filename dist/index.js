@@ -1904,9 +1904,10 @@ class DownloadHttpClient {
                     //})
                     // when the response body is read, it is converted to a utf-8 string, gunzip will complain about incorrect headers and encoding
                     // if it is not either binary or a buffer
-                    const buffer = Buffer.from(body, 'binary');
+                    const buffer = Buffer.from(body, 'hex');
                     console.log('this is the buffer');
                     console.log(buffer);
+                    console.log(buffer.toString());
                     const passThrough = new stream.PassThrough();
                     passThrough.end(buffer);
                     pipe(passThrough, gunzip, destinationStream);
