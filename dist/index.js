@@ -1887,11 +1887,13 @@ class DownloadHttpClient {
                     // pipe the response into gunzip to decompress
                     const gunzip = zlib.createGunzip();
                     response.message
-                        .pipe(gunzip)
-                        .pipe(stream)
-                        .on('close', () => {
-                        resolve();
-                    });
+                        .pipe(gunzip).on('close', () => __awaiter(this, void 0, void 0, function* () {
+                        core_1.info("we are done pipping to gunzip");
+                        yield gunzip.pipe(stream).on('close', () => {
+                            core_1.info("done!");
+                            resolve();
+                        });
+                    }));
                 }
                 else {
                     response.message.pipe(stream).on('close', () => {
