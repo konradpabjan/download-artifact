@@ -1011,6 +1011,7 @@ class UploadHttpClient {
         return __awaiter(this, void 0, void 0, function* () {
             // prepare all the necessary headers before making any http call
             const requestOptions = utils_1.getRequestOptions('application/octet-stream', true, isGzip, totalFileSize, end - start + 1, utils_1.getContentRange(start, end, uploadFileSize));
+            console.log(requestOptions);
             const uploadChunkRequest = () => __awaiter(this, void 0, void 0, function* () {
                 const client = this.uploadHttpManager.getClient(httpClientIndex);
                 return yield client.sendStream('PUT', resourceUrl, data, requestOptions);
@@ -1790,6 +1791,8 @@ class DownloadHttpClient {
                 const client = this.downloadHttpManager.getClient(httpClientIndex);
                 return yield client.get(artifactLocation, requestOptions);
             });
+            // maybe?
+            requestOptions['Accept-Encoding'] = 'gzip';
             // checks the response headers to determine if the file was compressed using gzip
             const isGzip = (headers) => {
                 console.log(headers);
