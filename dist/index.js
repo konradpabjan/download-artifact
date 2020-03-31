@@ -1883,19 +1883,16 @@ class DownloadHttpClient {
      * @param stream the stream where the file should be written to
      * @param isGzip does the response need to be be uncompressed
      */
-    pipeResponseToStream(response, stream, isGzip) {
+    pipeResponseToStream(response, destinationStream, isGzip) {
         return __awaiter(this, void 0, void 0, function* () {
             yield new Promise(resolve => {
                 if (isGzip) {
                     // pipe the response into gunzip to decompress
                     const gunzip = zlib.createGunzip();
-                    response.message
-                        .pipe(gunzip).on('close', () => __awaiter(this, void 0, void 0, function* () {
-                        core_1.info("we are done pipping to gunzip");
-                    }));
+                    pipe(response.message, gunzip, destinationStream);
                 }
                 else {
-                    response.message.pipe(stream).on('close', () => {
+                    response.message.pipe(destinationStream).on('close', () => {
                         resolve();
                     });
                 }
