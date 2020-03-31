@@ -869,7 +869,8 @@ class UploadHttpClient {
                     if (uploadFileResult.isSuccess === false) {
                         failedItemsToReport.push(currentFileParameters.file);
                         if (!continueOnError) {
-                            // existing uploads will be able to finish however all pending uploads will fail fast
+                            // fail fast
+                            core_1.info(`aborting artifact upload`);
                             abortPendingFileUploads = true;
                         }
                     }
@@ -953,11 +954,6 @@ class UploadHttpClient {
                     // upload only a single chunk at a time
                     while (offset < uploadFileSize) {
                         const chunkSize = Math.min(uploadFileSize - offset, parameters.maxChunkSize);
-                        if (abortFileUpload) {
-                            // if we don't want to continue in the event of an error, any pending upload chunks will be marked as failed
-                            failedChunkSizes += chunkSize;
-                            continue;
-                        }
                         // if an individual file is greater than 100MB (1024*1024*100) in size, display extra information about the upload status
                         if (uploadFileSize > 104857600) {
                             this.statusReporter.updateLargeFileStatus(parameters.file, offset, uploadFileSize);
@@ -965,6 +961,11 @@ class UploadHttpClient {
                         const start = offset;
                         const end = offset + chunkSize - 1;
                         offset += parameters.maxChunkSize;
+                        if (abortFileUpload) {
+                            // if we don't want to continue in the event of an error, any pending upload chunks will be marked as failed
+                            failedChunkSizes += chunkSize;
+                            continue;
+                        }
                         const result = yield this.uploadChunk(httpClientIndex, parameters.resourceUrl, fs.createReadStream(uploadFilePath, {
                             start,
                             end,
@@ -1032,13 +1033,17 @@ class UploadHttpClient {
             const backoffExponentially = () => __awaiter(this, void 0, void 0, function* () {
                 this.uploadHttpManager.disposeAndReplaceClient(httpClientIndex);
                 const backoffTime = utils_1.getExponentialRetryTimeInMilliseconds(retryCount);
-                core_1.info(`Exponential backoff for retry #${retryCount}. Waiting for ${backoffTime} milliseconds before continuing the upload at chunk ${start}`);
-                return new Promise(resolve => setTimeout(resolve, utils_1.getExponentialRetryTimeInMilliseconds(retryCount)));
+                core_1.info(`Exponential backoff for retry #${retryCount}. Waiting for ${backoffTime} milliseconds before continuing the upload at offset ${start}`);
+                yield new Promise(resolve => setTimeout(resolve, backoffTime));
+                core_1.info(`Finished exponential backoff for retry #${retryCount}, continuing with upload`);
+                return;
             });
             const backOffUsingRetryValue = (retryAfterValue) => __awaiter(this, void 0, void 0, function* () {
+                core_1.info(`disposing client with index ${httpClientIndex}`);
                 this.uploadHttpManager.disposeAndReplaceClient(httpClientIndex);
                 core_1.info(`Backoff due to too many requests, retry #${retryCount}. Waiting for ${retryAfterValue} milliseconds before continuing the upload`);
-                return new Promise(resolve => setTimeout(resolve, retryAfterValue));
+                core_1.info(`Finished backoff due to too many requests for retry #${retryCount}, continuing with upload`);
+                return;
             });
             // allow for failed chunks to be retried multiple times
             while (retryCount <= retryLimit) {
@@ -1066,6 +1071,7 @@ class UploadHttpClient {
                         }
                     }
                     else if (utils_1.isRetryableStatusCode(response.message.statusCode)) {
+                        core_1.info(`A ${response.message.statusCode} status code has been recieved, will attempt to retry the upload`);
                         retryCount++;
                         if (isRetryLimitExceeded(response)) {
                             return false;
@@ -1081,7 +1087,7 @@ class UploadHttpClient {
                 }
                 catch (error) {
                     // if an error is catched, it is usually indicative of a timeout so retry the upload
-                    core_1.info('An error has been caught, retrying the upload');
+                    core_1.info(`An error has been caught http-client index ${httpClientIndex}, retrying the upload`);
                     // eslint-disable-next-line no-console
                     console.log(error);
                     retryCount++;
@@ -1607,6 +1613,7 @@ class DefaultArtifactClient {
             else {
                 // Create all necessary directories recursively before starting any download
                 yield utils_1.createDirectoriesForArtifact(downloadSpecification.directoryStructure);
+                core.info('Directory structure has been setup for the artifact');
                 yield downloadHttpClient.downloadSingleArtifact(downloadSpecification.filesToDownload);
             }
             return {
@@ -1802,20 +1809,26 @@ class DownloadHttpClient {
                 this.downloadHttpManager.disposeAndReplaceClient(httpClientIndex);
                 const backoffTime = utils_1.getExponentialRetryTimeInMilliseconds(retryCount);
                 core_1.info(`Exponential backoff for retry #${retryCount}. Waiting for ${backoffTime} milliseconds before continuing the download`);
-                return new Promise(resolve => setTimeout(resolve, utils_1.getExponentialRetryTimeInMilliseconds(retryCount)));
+                yield new Promise(resolve => setTimeout(resolve, utils_1.getExponentialRetryTimeInMilliseconds(retryCount)));
+                core_1.info(`Finished exponential backoff for retry #${retryCount}, continuing with upload`);
+                return;
             });
             const backOffUsingRetryValue = (retryAfterValue) => __awaiter(this, void 0, void 0, function* () {
                 this.downloadHttpManager.disposeAndReplaceClient(httpClientIndex);
                 core_1.info(`Backoff due to too many requests, retry #${retryCount}. Waiting for ${retryAfterValue} milliseconds before continuing the download`);
-                return new Promise(resolve => setTimeout(resolve, retryAfterValue));
+                yield new Promise(resolve => setTimeout(resolve, retryAfterValue));
+                core_1.info(`Finished backoff due to too many requests for retry #${retryCount}, continuing with upload`);
+                return;
             });
             while (retryCount <= retryLimit) {
                 try {
                     const response = yield makeDownloadRequest();
+                    core_1.debug(`Http request has finished for ${artifactLocation}, will now try to process to ${downloadPath}`);
                     // Always read the body of the response. There is potential for a resource leak if the body is not read which will
                     // result in the connection remaining open along with unintended consequences when trying to dispose of the client
                     yield response.readBody();
                     if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
+                        core_1.info('piping response to a stream');
                         yield this.pipeResponseToStream(response, stream, isGzip(response.message.headers));
                         return;
                     }
@@ -1865,7 +1878,7 @@ class DownloadHttpClient {
      */
     pipeResponseToStream(response, stream, isGzip) {
         return __awaiter(this, void 0, void 0, function* () {
-            return new Promise(resolve => {
+            yield new Promise(resolve => {
                 if (isGzip) {
                     // pipe the response into gunzip to decompress
                     const gunzip = zlib.createGunzip();
@@ -1882,6 +1895,8 @@ class DownloadHttpClient {
                     });
                 }
             });
+            core_1.debug(`finished pipping response to stream, was ${isGzip}`);
+            return;
         });
     }
 }
