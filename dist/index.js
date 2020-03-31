@@ -1884,6 +1884,7 @@ class DownloadHttpClient {
      */
     pipeResponseToStream(response, destinationStream, isGzip) {
         return __awaiter(this, void 0, void 0, function* () {
+            console.log(response);
             yield new Promise(resolve => {
                 //if (isGzip) {
                 // pipe the response into gunzip to decompress
