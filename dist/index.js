@@ -1836,12 +1836,12 @@ class DownloadHttpClient {
                     core_1.debug(`Http request has finished for ${artifactLocation}, will now try to process to ${downloadPath}`);
                     // Always read the body of the response. There is potential for a resource leak if the body is not read which will
                     // result in the connection remaining open along with unintended consequences when trying to dispose of the client
-                    yield response.readBody();
+                    const body = yield response.readBody();
                     //tempStream.write(response.message)
                     //tempStream.end()
                     if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
                         core_1.info('piping response to a stream!');
-                        yield this.pipeResponseToStream(response, tempStream, destinationStream, isGzip(response.message.headers));
+                        yield this.pipeResponseToStream(response, body, destinationStream, isGzip(response.message.headers));
                         return;
                     }
                     else if (utils_1.isThrottledStatusCode(response.message.statusCode)) {
@@ -1888,22 +1888,28 @@ class DownloadHttpClient {
      * @param stream the stream where the file should be written to
      * @param isGzip does the response need to be be uncompressed
      */
-    pipeResponseToStream(response, tempStream, destinationStream, isGzip) {
+    pipeResponseToStream(response, body, destinationStream, isGzip) {
         return __awaiter(this, void 0, void 0, function* () {
             yield new Promise(resolve => {
                 if (isGzip) {
                     // pipe the response into gunzip to decompress
                     const gunzip = zlib.createGunzip();
-                    gunzip.on('data', (data) => {
-                        destinationStream.write(data);
-                    }).on('end', () => {
-                        destinationStream.end();
-                        resolve();
-                    });
+                    //gunzip.on('data', (data) => {
+                    //  destinationStream.write(data)
+                    //}).on('end', () => {
+                    //  destinationStream.end()
+                    //  resolve()
+                    //})
+                    // when the response body is read, it is converted to a utf-8 string, gunzip will complain about incorrect headers and encoding
+                    // if it is not either binary or a buffer
+                    const buffer = Buffer.from(body, 'utf-8');
+                    const passThrough = new stream.PassThrough();
+                    passThrough.end(buffer);
+                    pipe(passThrough, gunzip, destinationStream);
                     response.message.pipe(gunzip);
                 }
                 else {
-                    tempStream.pipe(destinationStream).on('close', () => {
+                    response.message.pipe(destinationStream).on('close', () => {
                         resolve();
                     });
                 }
