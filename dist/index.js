@@ -1894,13 +1894,13 @@ class DownloadHttpClient {
                 if (isGzip) {
                     // pipe the response into gunzip to decompress
                     const gunzip = zlib.createGunzip();
-                    //gunzip.on('data', () => {
-                    //  gunzip.pause()
-                    //})
-                    //tempStream.on('data', (chunk) => {
-                    //  gunzip.write(chunk)
-                    // })
-                    return pipe(response.message, gunzip, destinationStream);
+                    gunzip.on('data', (data) => {
+                        destinationStream.write(data);
+                    }).on('end', () => {
+                        destinationStream.end();
+                        resolve();
+                    });
+                    response.message.pipe(gunzip);
                 }
                 else {
                     tempStream.pipe(destinationStream).on('close', () => {
