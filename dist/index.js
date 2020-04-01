@@ -3448,14 +3448,8 @@ class DownloadHttpClient {
                 const client = this.downloadHttpManager.getClient(httpClientIndex);
                 return yield client.get(artifactLocation, requestOptions);
             });
-            // maybe?
             requestOptions['Accept-Encoding'] = 'gzip';
             requestOptions['Accept'] = 'application/octet-stream;api-version=6.0-preview;res-version=1';
-            // checks the response headers to determine if the file was compressed using gzip
-            const isGzip = (headers) => {
-                console.log(headers);
-                return ('content-encoding' in headers && headers['content-encoding'] === 'gzip');
-            };
             // checks if the retry limit has been reached. If there have been too many retries, fail so the download stops
             const checkRetryLimit = (response) => {
                 if (retryCount > retryLimit) {
@@ -3485,11 +3479,10 @@ class DownloadHttpClient {
             while (retryCount <= retryLimit) {
                 try {
                     const response = yield makeDownloadRequest();
-                    core_1.debug(`Http request has finished for ${artifactLocation}, will now try to process to ${downloadPath}`);
                     if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
+                        // The body contains the conents of the file, if it was uploaded using gzip, it will be decompressed by the @actions/http-client
                         const body = yield response.readBody();
                         yield this.pipeResponseToStream(body, downloadPath);
-                        core_1.info('returning');
                         return;
                     }
                     else if (utils_1.isThrottledStatusCode(response.message.statusCode)) {
@@ -3539,34 +3532,13 @@ class DownloadHttpClient {
     pipeResponseToStream(body, destinationPath) {
         return __awaiter(this, void 0, void 0, function* () {
             yield new Promise((resolve, reject) => {
-                //if (isGzip) {
-                // pipe the response into gunzip to decompress
-                //gunzip.on('data', (data) => {
-                //  destinationStream.write(data)
-                //}).on('end', () => {
-                //  destinationStream.end()
-                //  resolve()
-                //})
-                // when the response body is read, it is converted to a utf-8 string, gunzip will complain about incorrect headers and encoding
-                // if it is not either binary or a buffer
-                //const buffer = Buffer.from(JSON.stringify(body), "utf-8")
-                //console.log('this is the buffer')
-                //console.log(buffer)        
-                //const passThrough = new stream.PassThrough()
-                //passThrough.end(buffer)
-                //pipe(passThrough, gunzip, destinationStream)
-                //} else {
-                core_1.info('!!!! Will this work?. This is the body that we will be processing');
-                console.log(body);
                 fs.writeFile(destinationPath, body, (err) => {
                     if (err) {
                         console.log(err);
                         reject();
                     }
-                    core_1.info("resolving, we should exit now");
                     resolve();
                 });
-                //}
             });
             return;
         });
@@ -4665,7 +4637,7 @@ function getInitialRetryIntervalInMilliseconds() {
 }
 exports.getInitialRetryIntervalInMilliseconds = getInitialRetryIntervalInMilliseconds;
 function getDownloadFileConcurrency() {
-    return 2;
+    return 4;
 }
 exports.getDownloadFileConcurrency = getDownloadFileConcurrency;
 function getRuntimeToken() {
