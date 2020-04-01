@@ -3486,10 +3486,10 @@ class DownloadHttpClient {
                 try {
                     const response = yield makeDownloadRequest();
                     core_1.debug(`Http request has finished for ${artifactLocation}, will now try to process to ${downloadPath}`);
-                    const body = yield response.readBody();
                     if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
-                        core_1.info('piping response to a stream!');
+                        const body = yield response.readBody();
                         yield this.pipeResponseToStream(response, body, destinationStream, isGzip(response.message.headers));
+                        core_1.info('returning');
                         return;
                     }
                     else if (utils_1.isThrottledStatusCode(response.message.statusCode)) {
@@ -3559,6 +3559,7 @@ class DownloadHttpClient {
                 core_1.info('!!!! Will this work?. This is the body that we will be processing');
                 console.log(body);
                 destinationStream.on('end', () => {
+                    core_1.info("resolving, we should exit now");
                     resolve();
                 });
                 destinationStream.write(body);
