@@ -1837,6 +1837,7 @@ class DownloadHttpClient {
                     // Always read the body of the response. There is potential for a resource leak if the body is not read which will
                     // result in the connection remaining open along with unintended consequences when trying to dispose of the client
                     const body = yield response.readBody();
+                    response.message;
                     console.log("this is the original body");
                     console.log(body);
                     //tempStream.write(response.message)
@@ -1904,12 +1905,12 @@ class DownloadHttpClient {
                     //})
                     // when the response body is read, it is converted to a utf-8 string, gunzip will complain about incorrect headers and encoding
                     // if it is not either binary or a buffer
-                    const buffer = Buffer.from(body, "binary");
+                    const buffer = Buffer.from(JSON.stringify(body), "utf-8");
                     console.log('this is the buffer');
                     console.log(buffer);
                     const passThrough = new stream.PassThrough();
-                    passThrough.end(buffer);
-                    pipe(passThrough, gunzip);
+                    passThrough.end(response.message);
+                    pipe(response.message, gunzip);
                 }
                 else {
                     response.message.pipe(destinationStream).on('close', () => {
