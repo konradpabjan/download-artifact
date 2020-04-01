@@ -1587,7 +1587,6 @@ class DefaultArtifactClient {
         });
     }
     downloadArtifact(name, path, options) {
-        var _a;
         return __awaiter(this, void 0, void 0, function* () {
             const downloadHttpClient = new download_http_client_1.DownloadHttpClient();
             const artifacts = yield downloadHttpClient.listArtifacts();
@@ -1607,7 +1606,7 @@ class DefaultArtifactClient {
             path = path_1.normalize(path);
             path = path_1.resolve(path);
             // During upload, empty directories are rejected by the remote server so there should be no artifacts that consist of only empty directories
-            const downloadSpecification = download_specification_1.getDownloadSpecification(name, items.value, path, ((_a = options) === null || _a === void 0 ? void 0 : _a.createArtifactFolder) || false);
+            const downloadSpecification = download_specification_1.getDownloadSpecification(name, items.value, path, (options === null || options === void 0 ? void 0 : options.createArtifactFolder) || false);
             if (downloadSpecification.filesToDownload.length === 0) {
                 core.info(`No downloadable files were found for the artifact: ${artifactToDownload.name}`);
             }
@@ -1894,29 +1893,28 @@ class DownloadHttpClient {
     pipeResponseToStream(response, body, destinationStream, isGzip) {
         return __awaiter(this, void 0, void 0, function* () {
             yield new Promise(resolve => {
-                if (isGzip) {
-                    // pipe the response into gunzip to decompress
-                    const gunzip = zlib.createGunzip();
-                    //gunzip.on('data', (data) => {
-                    //  destinationStream.write(data)
-                    //}).on('end', () => {
-                    //  destinationStream.end()
-                    //  resolve()
-                    //})
-                    // when the response body is read, it is converted to a utf-8 string, gunzip will complain about incorrect headers and encoding
-                    // if it is not either binary or a buffer
-                    const buffer = Buffer.from(JSON.stringify(body), "utf-8");
-                    console.log('this is the buffer');
-                    console.log(buffer);
-                    const passThrough = new stream.PassThrough();
-                    passThrough.end(buffer);
-                    pipe(passThrough, gunzip, destinationStream);
-                }
-                else {
-                    response.message.pipe(destinationStream).on('close', () => {
-                        resolve();
-                    });
-                }
+                //if (isGzip) {
+                // pipe the response into gunzip to decompress
+                const gunzip = zlib.createGunzip();
+                //gunzip.on('data', (data) => {
+                //  destinationStream.write(data)
+                //}).on('end', () => {
+                //  destinationStream.end()
+                //  resolve()
+                //})
+                // when the response body is read, it is converted to a utf-8 string, gunzip will complain about incorrect headers and encoding
+                // if it is not either binary or a buffer
+                //const buffer = Buffer.from(JSON.stringify(body), "utf-8")
+                //console.log('this is the buffer')
+                //console.log(buffer)        
+                //const passThrough = new stream.PassThrough()
+                //passThrough.end(buffer)
+                //pipe(passThrough, gunzip, destinationStream)
+                //} else {
+                response.message.pipe(destinationStream).on('close', () => {
+                    resolve();
+                });
+                //}
             });
             return;
         });
