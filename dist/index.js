@@ -1436,7 +1436,6 @@ class UploadHttpClient {
         return __awaiter(this, void 0, void 0, function* () {
             // prepare all the necessary headers before making any http call
             const requestOptions = utils_1.getRequestOptions('application/octet-stream', true, isGzip, totalFileSize, end - start + 1, utils_1.getContentRange(start, end, uploadFileSize));
-            console.log(requestOptions);
             const uploadChunkRequest = () => __awaiter(this, void 0, void 0, function* () {
                 const client = this.uploadHttpManager.getClient(httpClientIndex);
                 return yield client.sendStream('PUT', resourceUrl, data, requestOptions);
@@ -3341,6 +3340,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const fs = __importStar(__webpack_require__(747));
+const zlib = __importStar(__webpack_require__(761));
 const utils_1 = __webpack_require__(844);
 const url_1 = __webpack_require__(835);
 const status_reporter_1 = __webpack_require__(974);
@@ -3348,10 +3348,6 @@ const perf_hooks_1 = __webpack_require__(630);
 const http_manager_1 = __webpack_require__(114);
 const config_variables_1 = __webpack_require__(706);
 const core_1 = __webpack_require__(211);
-const util_1 = __webpack_require__(669);
-const stream = __importStar(__webpack_require__(413));
-const stream_1 = __webpack_require__(413);
-const pipe = util_1.promisify(stream_1.pipeline);
 class DownloadHttpClient {
     constructor() {
         this.downloadHttpManager = new http_manager_1.HttpManager(config_variables_1.getDownloadFileConcurrency());
@@ -3440,8 +3436,7 @@ class DownloadHttpClient {
         return __awaiter(this, void 0, void 0, function* () {
             let retryCount = 0;
             const retryLimit = config_variables_1.getRetryLimit();
-            const destinationStream = fs.createWriteStream(downloadPath);
-            const tempStream = new stream.PassThrough();
+            const stream = fs.createWriteStream(downloadPath);
             const requestOptions = utils_1.getRequestOptions('application/octet-stream', true);
             // a single GET request is used to download a file
             const makeDownloadRequest = () => __awaiter(this, void 0, void 0, function* () {
@@ -3449,7 +3444,8 @@ class DownloadHttpClient {
                 return yield client.get(artifactLocation, requestOptions);
             });
             requestOptions['Accept-Encoding'] = 'gzip';
-            requestOptions['Accept'] = 'application/octet-stream;api-version=6.0-preview;res-version=1';
+            requestOptions['Accept'] =
+                'application/octet-stream;api-version=6.0-preview;res-version=1';
             // checks if the retry limit has been reached. If there have been too many retries, fail so the download stops
             const checkRetryLimit = (response) => {
                 if (retryCount > retryLimit) {
@@ -3469,6 +3465,10 @@ class DownloadHttpClient {
                 core_1.info(`Finished exponential backoff for retry #${retryCount}, continuing with upload`);
                 return;
             });
+            // check the response headers to determine if the file was compressed using gzip
+            const isGzip = (headers) => {
+                return ('content-encoding' in headers && headers['content-encoding'] === 'gzip');
+            };
             const backOffUsingRetryValue = (retryAfterValue) => __awaiter(this, void 0, void 0, function* () {
                 this.downloadHttpManager.disposeAndReplaceClient(httpClientIndex);
                 core_1.info(`Backoff due to too many requests, retry #${retryCount}. Waiting for ${retryAfterValue} milliseconds before continuing the download`);
@@ -3481,8 +3481,7 @@ class DownloadHttpClient {
                     const response = yield makeDownloadRequest();
                     if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
                         // The body contains the conents of the file, if it was uploaded using gzip, it will be decompressed by the @actions/http-client
-                        const body = yield response.readBody();
-                        yield this.pipeResponseToStream(body, downloadPath);
+                        yield this.pipeResponseToFile(response, stream, isGzip(response.message.headers));
                         return;
                     }
                     else if (utils_1.isThrottledStatusCode(response.message.statusCode)) {
@@ -3524,21 +3523,28 @@ class DownloadHttpClient {
         });
     }
     /**
-     * Pipes the response from downloading an individual file to the appropriate stream
-     * @param response the http response recieved when downloading a file
-     * @param stream the stream where the file should be written to
-     * @param isGzip does the response need to be be uncompressed
+     * Writes the content of the response body to a file
+     * @param body the decoded response body
+     * @param destinationPath the path to the file that will contain the final downloaded content
      */
-    pipeResponseToStream(body, destinationPath) {
+    pipeResponseToFile(response, destinationStream, isGzip) {
         return __awaiter(this, void 0, void 0, function* () {
             yield new Promise((resolve, reject) => {
-                fs.writeFile(destinationPath, body, (err) => {
-                    if (err) {
-                        console.log(err);
-                        reject();
-                    }
-                    resolve();
-                });
+                if (isGzip) {
+                    // pipe the response into gunzip to decompress
+                    const gunzip = zlib.createGunzip();
+                    response.message
+                        .pipe(gunzip)
+                        .pipe(destinationStream)
+                        .on('close', () => {
+                        resolve();
+                    });
+                }
+                else {
+                    response.message.pipe(destinationStream).on('close', () => {
+                        resolve();
+                    });
+                }
             });
             return;
         });
@@ -4358,56 +4364,6 @@ module.exports.win32 = win32;
 
 /***/ }),
 
-/***/ 554:
-/***/ (function(__unusedmodule, exports, __webpack_require__) {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", { value: true });
-const zlib = __webpack_require__(761);
-/**
- * Decompress/Decode gzip encoded JSON
- * Using Node.js built-in zlib module
- *
- * @param {Buffer} buffer
- * @param {string} charset
- * @return {Promise<string>}
- */
-async function decompressGzippedContent(buffer, charset) {
-    return new Promise(async (resolve, reject) => {
-        zlib.gunzip(buffer, function (error, buffer) {
-            if (error) {
-                reject(error);
-            }
-            resolve(buffer.toString(charset));
-        });
-    });
-}
-exports.decompressGzippedContent = decompressGzippedContent;
-/**
- * Obtain Response's Content Charset.
- * Through inspecting `content-type` response header.
- * It Returns 'utf-8' if NO charset specified/matched.
- *
- * @param {IHttpClientResponse} response
- * @return {string} - Content Encoding Charset; Default=utf-8
- */
-function obtainContentCharset(response) {
-    // Find the charset, if specified.
-    // Search for the `charset=CHARSET` string, not including `;,\r\n`
-    // Example: content-type: 'application/json;charset=utf-8'
-    // |__ matches would be ['charset=utf-8', 'utf-8', index: 18, input: 'application/json; charset=utf-8']
-    // |_____ matches[1] would have the charset :tada: , in our example it's utf-8
-    // However, if the matches Array was empty or no charset found, 'utf-8' would be returned by default.
-    const contentType = response.message.headers['content-type'] || '';
-    const matches = contentType.match(/charset=([^;,\r\n]+)/i);
-    return (matches && matches[1]) ? matches[1] : 'utf-8';
-}
-exports.obtainContentCharset = obtainContentCharset;
-
-
-/***/ }),
-
 /***/ 605:
 /***/ (function(module) {
 
@@ -4637,7 +4593,7 @@ function getInitialRetryIntervalInMilliseconds() {
 }
 exports.getInitialRetryIntervalInMilliseconds = getInitialRetryIntervalInMilliseconds;
 function getDownloadFileConcurrency() {
-    return 4;
+    return 3;
 }
 exports.getDownloadFileConcurrency = getDownloadFileConcurrency;
 function getRuntimeToken() {
@@ -7304,7 +7260,6 @@ const url = __webpack_require__(835);
 const http = __webpack_require__(605);
 const https = __webpack_require__(34);
 const pm = __webpack_require__(755);
-const utils = __webpack_require__(554);
 let tunnel;
 var HttpCodes;
 (function (HttpCodes) {
@@ -7329,7 +7284,6 @@ var HttpCodes;
     HttpCodes[HttpCodes["RequestTimeout"] = 408] = "RequestTimeout";
     HttpCodes[HttpCodes["Conflict"] = 409] = "Conflict";
     HttpCodes[HttpCodes["Gone"] = 410] = "Gone";
-    HttpCodes[HttpCodes["TooManyRequests"] = 429] = "TooManyRequests";
     HttpCodes[HttpCodes["InternalServerError"] = 500] = "InternalServerError";
     HttpCodes[HttpCodes["NotImplemented"] = 501] = "NotImplemented";
     HttpCodes[HttpCodes["BadGateway"] = 502] = "BadGateway";
@@ -7365,26 +7319,12 @@ class HttpClientResponse {
     }
     readBody() {
         return new Promise(async (resolve, reject) => {
-            let buffer = Buffer.alloc(0);
-            const encodingCharset = utils.obtainContentCharset(this);
-            // Extract Encoding from header: 'content-encoding' and check against the supported BufferEncoding types
-            // Match `gzip`, `gzip, deflate` variations of GZIP encoding
-            const contentEncodingHeader = this.message.headers['content-encoding'] || '';
-            const isGzippedEncoded = new RegExp('(gzip$)|(gzip, *deflate)').test(contentEncodingHeader);
-            const supportedEncodings = ['ascii', 'utf8', 'utf-8', 'utf16le', 'ucs2', 'ucs-2', 'base64', 'latin1', 'binary', 'hex'];
-            const isSupportedEncoding = (x) => supportedEncodings.includes(x);
-            const encoding = isSupportedEncoding(contentEncodingHeader) ? contentEncodingHeader : 'utf-8';
-            this.message.on('data', function (data) {
-                const chunk = (typeof data === 'string') ? Buffer.from(data, encoding) : data;
-                buffer = Buffer.concat([buffer, chunk]);
-            }).on('end', async function () {
-                if (isGzippedEncoded) { // Process GZipped Response Body HERE
-                    const gunzippedBody = await utils.decompressGzippedContent(buffer, encodingCharset);
-                    resolve(gunzippedBody);
-                }
-                resolve(buffer.toString(encodingCharset));
-            }).on('error', function (err) {
-                reject(err);
+            let output = Buffer.alloc(0);
+            this.message.on('data', (chunk) => {
+                output = Buffer.concat([output, chunk]);
+            });
+            this.message.on('end', () => {
+                resolve(output.toString());
             });
         });
     }
