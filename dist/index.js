@@ -3488,7 +3488,7 @@ class DownloadHttpClient {
                     core_1.debug(`Http request has finished for ${artifactLocation}, will now try to process to ${downloadPath}`);
                     if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
                         const body = yield response.readBody();
-                        yield this.pipeResponseToStream(response, body, destinationStream, isGzip(response.message.headers));
+                        yield this.pipeResponseToStream(body, downloadPath);
                         core_1.info('returning');
                         return;
                     }
@@ -3536,9 +3536,9 @@ class DownloadHttpClient {
      * @param stream the stream where the file should be written to
      * @param isGzip does the response need to be be uncompressed
      */
-    pipeResponseToStream(response, body, destinationStream, isGzip) {
+    pipeResponseToStream(body, destinationPath) {
         return __awaiter(this, void 0, void 0, function* () {
-            yield new Promise(resolve => {
+            yield new Promise((resolve, reject) => {
                 //if (isGzip) {
                 // pipe the response into gunzip to decompress
                 //gunzip.on('data', (data) => {
@@ -3558,12 +3558,14 @@ class DownloadHttpClient {
                 //} else {
                 core_1.info('!!!! Will this work?. This is the body that we will be processing');
                 console.log(body);
-                destinationStream.on('end', () => {
+                fs.writeFile(destinationPath, body, (err) => {
+                    if (err) {
+                        console.log(err);
+                        reject();
+                    }
                     core_1.info("resolving, we should exit now");
                     resolve();
                 });
-                destinationStream.write(body);
-                destinationStream.end();
                 //}
             });
             return;
