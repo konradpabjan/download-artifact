@@ -3564,7 +3564,8 @@ class DownloadHttpClient {
                 //pipe(passThrough, gunzip, destinationStream)
                 //} else {
                 core_1.info('!!!! Will this work?');
-                response.message.pipe(destinationStream).on('close', () => {
+                destinationStream.write(body);
+                destinationStream.on('finish', () => {
                     resolve();
                 });
                 //}
