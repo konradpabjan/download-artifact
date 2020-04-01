@@ -3558,10 +3558,11 @@ class DownloadHttpClient {
                 //} else {
                 core_1.info('!!!! Will this work?. This is the body that we will be processing');
                 console.log(body);
-                destinationStream.write(body);
                 destinationStream.on('end', () => {
                     resolve();
                 });
+                destinationStream.write(body);
+                destinationStream.end();
                 //}
             });
             return;
