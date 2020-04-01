@@ -3486,14 +3486,7 @@ class DownloadHttpClient {
                 try {
                     const response = yield makeDownloadRequest();
                     core_1.debug(`Http request has finished for ${artifactLocation}, will now try to process to ${downloadPath}`);
-                    // Always read the body of the response. There is potential for a resource leak if the body is not read which will
-                    // result in the connection remaining open along with unintended consequences when trying to dispose of the client
                     const body = yield response.readBody();
-                    response.message;
-                    console.log("this is the original body");
-                    console.log(body);
-                    //tempStream.write(response.message)
-                    //tempStream.end()
                     if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
                         core_1.info('piping response to a stream!');
                         yield this.pipeResponseToStream(response, body, destinationStream, isGzip(response.message.headers));
@@ -3563,9 +3556,10 @@ class DownloadHttpClient {
                 //passThrough.end(buffer)
                 //pipe(passThrough, gunzip, destinationStream)
                 //} else {
-                core_1.info('!!!! Will this work?');
+                core_1.info('!!!! Will this work?. This is the body that we will be processing');
+                console.log(body);
                 destinationStream.write(body);
-                destinationStream.on('finish', () => {
+                destinationStream.on('end', () => {
                     resolve();
                 });
                 //}
