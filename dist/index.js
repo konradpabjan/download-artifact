@@ -1909,8 +1909,8 @@ class DownloadHttpClient {
                     console.log('this is the buffer');
                     console.log(buffer);
                     const passThrough = new stream.PassThrough();
-                    passThrough.end(response.message);
-                    pipe(response.message, gunzip);
+                    passThrough.end(buffer);
+                    pipe(passThrough, gunzip, destinationStream);
                 }
                 else {
                     response.message.pipe(destinationStream).on('close', () => {
