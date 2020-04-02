@@ -3437,7 +3437,6 @@ class DownloadHttpClient {
             const retryLimit = config_variables_1.getRetryLimit();
             const destinationStream = fs.createWriteStream(downloadPath);
             const requestOptions = utils_1.getDownloadRequestOptions('application/json', true, true);
-            requestOptions;
             // a single GET request is used to download a file
             const makeDownloadRequest = () => __awaiter(this, void 0, void 0, function* () {
                 const client = this.downloadHttpManager.getClient(httpClientIndex);
@@ -3494,7 +3493,7 @@ class DownloadHttpClient {
                 }
                 if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
                     // The body contains the contents of the file however calling response.readBody() casues all the content to be converted to a string
-                    // which can cause gzip encoded data to be irreversably damaged.
+                    // which can cause some gzip encoded data to lost
                     // Instead of using response.readBody(), response.message is a readablestream that can be directly used to get the raw body contents
                     yield this.pipeResponseToFile(response, destinationStream, isGzip(response.message.headers));
                     return;
@@ -3528,8 +3527,8 @@ class DownloadHttpClient {
     /**
      * Pipes the response from downloading an individual file to the appropriate destination stream while decoding gzip content if necessary
      * @param response the http response recieved when downloading a file
-     * @param destinationStream the path to the file that will contain the final downloaded content
-     * @param isGzip a boolean denoting if the content needs to be gzip decoded
+     * @param destinationStream the stream where the file should be written to
+     * @param isGzip a boolean denoting if the content is compressed using gzip and if we need to decode it
      */
     pipeResponseToFile(response, destinationStream, isGzip) {
         return __awaiter(this, void 0, void 0, function* () {
