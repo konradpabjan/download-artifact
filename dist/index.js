@@ -1225,7 +1225,7 @@ class UploadHttpClient {
             const artifactUrl = utils_1.getArtifactUrl();
             // use the first client from the httpManager, `keep-alive` is not used so the connection will close immediatly
             const client = this.uploadHttpManager.getClient(0);
-            const requestOptions = utils_1.getRequestOptions('application/json', false, false);
+            const requestOptions = utils_1.getRequestOptions('application/json');
             const rawResponse = yield client.post(artifactUrl, data, requestOptions);
             const body = yield rawResponse.readBody();
             if (utils_1.isSuccessStatusCode(rawResponse.message.statusCode) && body) {
@@ -1435,7 +1435,7 @@ class UploadHttpClient {
     uploadChunk(httpClientIndex, resourceUrl, data, start, end, uploadFileSize, isGzip, totalFileSize) {
         return __awaiter(this, void 0, void 0, function* () {
             // prepare all the necessary headers before making any http call
-            const requestOptions = utils_1.getRequestOptions('application/octet-stream', true, isGzip, totalFileSize, end - start + 1, utils_1.getContentRange(start, end, uploadFileSize));
+            const requestOptions = utils_1.getRequestOptions('application/json', 'application/octet-stream', true, isGzip, totalFileSize, end - start + 1, utils_1.getContentRange(start, end, uploadFileSize));
             const uploadChunkRequest = () => __awaiter(this, void 0, void 0, function* () {
                 const client = this.uploadHttpManager.getClient(httpClientIndex);
                 return yield client.sendStream('PUT', resourceUrl, data, requestOptions);
@@ -1531,7 +1531,7 @@ class UploadHttpClient {
      */
     patchArtifactSize(size, artifactName) {
         return __awaiter(this, void 0, void 0, function* () {
-            const requestOptions = utils_1.getRequestOptions('application/json', false, false);
+            const requestOptions = utils_1.getRequestOptions('application/json');
             const resourceUrl = new url_1.URL(utils_1.getArtifactUrl());
             resourceUrl.searchParams.append('artifactName', artifactName);
             const parameters = { Size: size };
@@ -3362,7 +3362,7 @@ class DownloadHttpClient {
             const artifactUrl = utils_1.getArtifactUrl();
             // use the first client from the httpManager, `keep-alive` is not used so the connection will close immediatly
             const client = this.downloadHttpManager.getClient(0);
-            const requestOptions = utils_1.getRequestOptions('application/json', false);
+            const requestOptions = utils_1.getRequestOptions('application/json');
             const rawResponse = yield client.get(artifactUrl, requestOptions);
             const body = yield rawResponse.readBody();
             if (utils_1.isSuccessStatusCode(rawResponse.message.statusCode) && body) {
@@ -3385,7 +3385,7 @@ class DownloadHttpClient {
             resourceUrl.searchParams.append('itemPath', artifactName);
             // use the first client from the httpManager, `keep-alive` is not used so the connection will close immediatly
             const client = this.downloadHttpManager.getClient(0);
-            const requestOptions = utils_1.getRequestOptions('application/json', false);
+            const requestOptions = utils_1.getRequestOptions('application/json');
             const rawResponse = yield client.get(resourceUrl.toString(), requestOptions);
             const body = yield rawResponse.readBody();
             if (utils_1.isSuccessStatusCode(rawResponse.message.statusCode) && body) {
@@ -3436,20 +3436,20 @@ class DownloadHttpClient {
         return __awaiter(this, void 0, void 0, function* () {
             let retryCount = 0;
             const retryLimit = config_variables_1.getRetryLimit();
-            const stream = fs.createWriteStream(downloadPath);
-            const requestOptions = utils_1.getRequestOptions('application/octet-stream', true);
+            const destinationStream = fs.createWriteStream(downloadPath);
+            const requestOptions = utils_1.getRequestOptions('application/octet-stream', 'application/json', true);
             // a single GET request is used to download a file
             const makeDownloadRequest = () => __awaiter(this, void 0, void 0, function* () {
                 const client = this.downloadHttpManager.getClient(httpClientIndex);
                 return yield client.get(artifactLocation, requestOptions);
             });
-            requestOptions['Accept-Encoding'] = 'gzip';
-            requestOptions['Accept'] =
-                'application/octet-stream;api-version=6.0-preview;res-version=1';
-            // checks if the retry limit has been reached. If there have been too many retries, fail so the download stops
-            const checkRetryLimit = (response) => {
+            // Increments the current retry count and then checks if the retry limit has been reached
+            // If there have been too many retries, fail so the download stops
+            const incrementAndCheckRetryLimit = (response) => {
+                retryCount++;
                 if (retryCount > retryLimit) {
                     if (response) {
+                        // display extra information if the retry limit has been reached
                         // eslint-disable-next-line no-console
                         console.log(response);
                     }
@@ -3473,76 +3473,89 @@ class DownloadHttpClient {
                 this.downloadHttpManager.disposeAndReplaceClient(httpClientIndex);
                 core_1.info(`Backoff due to too many requests, retry #${retryCount}. Waiting for ${retryAfterValue} milliseconds before continuing the download`);
                 yield new Promise(resolve => setTimeout(resolve, retryAfterValue));
-                core_1.info(`Finished backoff due to too many requests for retry #${retryCount}, continuing with upload`);
+                core_1.info(`Finished backoff due to too many requests for retry #${retryCount}, continuing with download`);
                 return;
             });
+            // keep trying to download a file until a retry limit has been reached
             while (retryCount <= retryLimit) {
+                let response;
                 try {
-                    const response = yield makeDownloadRequest();
-                    if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
-                        // The body contains the conents of the file, if it was uploaded using gzip, it will be decompressed by the @actions/http-client
-                        yield this.pipeResponseToFile(response, stream, isGzip(response.message.headers));
-                        return;
-                    }
-                    else if (utils_1.isThrottledStatusCode(response.message.statusCode)) {
-                        core_1.info('A 429 response code has been recieved when attempting to download an artifact');
-                        const retryAfterValue = utils_1.tryGetRetryAfterValueTimeInMilliseconds(response.message.headers);
-                        if (retryAfterValue) {
-                            yield backOffUsingRetryValue(retryAfterValue);
-                        }
-                        else {
-                            // no retry time available, differ to standard exponential backoff
-                            retryCount++;
-                            checkRetryLimit(response);
-                            yield backoffExponentially();
-                        }
-                    }
-                    else if (utils_1.isRetryableStatusCode(response.message.statusCode)) {
-                        retryCount++;
-                        checkRetryLimit(response);
-                        yield backoffExponentially();
-                    }
-                    else {
-                        // Some unexpected response code, fail immediatly and stop the download
-                        // eslint-disable-next-line no-console
-                        console.log(response);
-                        break;
-                    }
+                    response = yield makeDownloadRequest();
                 }
                 catch (error) {
                     // if an error is catched, it is usually indicative of a timeout so retry the download
-                    core_1.info('An error has been caught, retrying the download');
+                    core_1.info('An error has been caught, while attempting to download a file');
                     // eslint-disable-next-line no-console
                     console.log(error);
-                    retryCount++;
-                    checkRetryLimit();
+                    // increment the retryCount and use exponential backoff to wait before making the next request
+                    incrementAndCheckRetryLimit();
+                    yield backoffExponentially();
+                    continue;
+                }
+                if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
+                    // The body contains the contents of the file however calling response.readBody() casues all the content to be converted to a string
+                    // which can cause gzip encoded data to be irreversably damaged.
+                    // Instead of using response.readBody(), response.message is a readablestream that can be directly used to get the raw body contents
+                    yield this.pipeResponseToFile(response, destinationStream, isGzip(response.message.headers));
+                    return;
+                }
+                else if (utils_1.isThrottledStatusCode(response.message.statusCode)) {
+                    core_1.info('A 429 response code has been recieved when attempting to download an artifact');
+                    const retryAfterValue = utils_1.tryGetRetryAfterValueTimeInMilliseconds(response.message.headers);
+                    if (retryAfterValue) {
+                        incrementAndCheckRetryLimit();
+                        yield backOffUsingRetryValue(retryAfterValue);
+                    }
+                    else {
+                        // no retry time available, differ to standard exponential backoff
+                        incrementAndCheckRetryLimit(response);
+                        yield backoffExponentially();
+                    }
+                }
+                else if (utils_1.isRetryableStatusCode(response.message.statusCode)) {
+                    incrementAndCheckRetryLimit(response);
                     yield backoffExponentially();
                 }
+                else {
+                    // Some unexpected response code, fail immediatly and stop the download
+                    // eslint-disable-next-line no-console
+                    console.log(response);
+                    throw new Error(`###ERROR### Unable to download ${artifactLocation} ###`);
+                }
             }
-            throw new Error(`###ERROR### Unable to download ${artifactLocation} ###`);
         });
     }
     /**
-     * Writes the content of the response body to a file
-     * @param body the decoded response body
-     * @param destinationPath the path to the file that will contain the final downloaded content
+     * Pipes the response from downloading an individual file to the appropriate destination stream while decoding gzip content if necessary
+     * @param response the http response recieved when downloading a file
+     * @param destinationStream the path to the file that will contain the final downloaded content
+     * @param isGzip a boolean denoting if the content needs to be gzip decoded
      */
     pipeResponseToFile(response, destinationStream, isGzip) {
         return __awaiter(this, void 0, void 0, function* () {
             yield new Promise((resolve, reject) => {
                 if (isGzip) {
-                    // pipe the response into gunzip to decompress
                     const gunzip = zlib.createGunzip();
                     response.message
                         .pipe(gunzip)
                         .pipe(destinationStream)
                         .on('close', () => {
                         resolve();
+                    })
+                        .on('error', error => {
+                        core_1.info('An error has been encountered while processing the downloaded file');
+                        reject(error);
                     });
                 }
                 else {
-                    response.message.pipe(destinationStream).on('close', () => {
+                    response.message
+                        .pipe(destinationStream)
+                        .on('close', () => {
                         resolve();
+                    })
+                        .on('error', error => {
+                        core_1.info('An error has been encountered while processing the downloaded file');
+                        reject(error);
                     });
                 }
             });
@@ -5017,6 +5030,7 @@ function getContentRange(start, end, total) {
 exports.getContentRange = getContentRange;
 /**
  * Sets all the necessary headers when making HTTP calls
+ * @param {string} acceptType the type of content taht we can accept
  * @param {string} contentType the type of content being uploaded
  * @param {boolean} isKeepAlive is the same connection being used to make multiple calls
  * @param {boolean} isGzip is the connection being used to upload GZip compressed content
@@ -5025,14 +5039,14 @@ exports.getContentRange = getContentRange;
  * @param {string} contentRange the range of the content that is being uploaded
  * @returns appropriate request options to make a specific http call
  */
-function getRequestOptions(contentType, isKeepAlive, isGzip, uncompressedLength, contentLength, contentRange) {
-    const requestOptions = {
-        // same Accept type for each http call that gets made
-        Accept: `application/json;api-version=${getApiVersion()}`
-    };
-    if (contentType) {
-        requestOptions['Content-Type'] = contentType;
-    }
+function getRequestOptions(acceptType, contentType, isKeepAlive, isGzip, uncompressedLength, contentLength, contentRange) {
+    const requestOptions = {};
+    requestOptions['Accept-Encoding'] = 'gzip';
+    requestOptions['Accept'] = `${acceptType};api-version=${getApiVersion()}`;
+    // default to application/json if no Content-Type is provided
+    contentType
+        ? (requestOptions['Content-Type'] = contentType)
+        : (requestOptions['Content-Type'] = 'application/json');
     if (isKeepAlive) {
         requestOptions['Connection'] = 'Keep-Alive';
         // keep alive for at least 10 seconds before closing the connection
