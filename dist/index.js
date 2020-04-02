@@ -3436,7 +3436,7 @@ class DownloadHttpClient {
             let retryCount = 0;
             const retryLimit = config_variables_1.getRetryLimit();
             const destinationStream = fs.createWriteStream(downloadPath);
-            const requestOptions = utils_1.getDownloadRequestOptions('application/json', true, 'application/octet-stream');
+            const requestOptions = utils_1.getDownloadRequestOptions('application/json', true, true, 'application/octet-stream');
             requestOptions;
             // a single GET request is used to download a file
             const makeDownloadRequest = () => __awaiter(this, void 0, void 0, function* () {
@@ -5034,10 +5034,8 @@ exports.getContentRange = getContentRange;
  * @param {string} contentType the type of content being uploaded
  * @param {boolean} isKeepAlive is the same connection being used to make multiple calls
  */
-function getDownloadRequestOptions(contentType, isKeepAlive, acceptType) {
+function getDownloadRequestOptions(contentType, isKeepAlive, acceptGzip, acceptType) {
     const requestOptions = {};
-    requestOptions['Accept-Encoding'] = 'gzip';
-    // optional headers that are not always needed during artifact download
     if (contentType) {
         requestOptions['Content-Type'] = contentType;
     }
@@ -5045,6 +5043,9 @@ function getDownloadRequestOptions(contentType, isKeepAlive, acceptType) {
         requestOptions['Connection'] = 'Keep-Alive';
         // keep alive for at least 10 seconds before closing the connection
         requestOptions['Keep-Alive'] = '10';
+    }
+    if (acceptGzip) {
+        requestOptions['Accept-Encoding'] = 'gzip';
     }
     // default to application/json if an accept type is not provided
     acceptType
