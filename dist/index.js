@@ -3361,7 +3361,7 @@ class DownloadHttpClient {
             const artifactUrl = utils_1.getArtifactUrl();
             // use the first client from the httpManager, `keep-alive` is not used so the connection will close immediatly
             const client = this.downloadHttpManager.getClient(0);
-            const requestOptions = utils_1.getDownloadRequestOptions('application/json', false);
+            const requestOptions = utils_1.getDownloadRequestOptions('application/json');
             const rawResponse = yield client.get(artifactUrl, requestOptions);
             const body = yield rawResponse.readBody();
             if (utils_1.isSuccessStatusCode(rawResponse.message.statusCode) && body) {
@@ -3384,7 +3384,7 @@ class DownloadHttpClient {
             resourceUrl.searchParams.append('itemPath', artifactName);
             // use the first client from the httpManager, `keep-alive` is not used so the connection will close immediatly
             const client = this.downloadHttpManager.getClient(0);
-            const requestOptions = utils_1.getDownloadRequestOptions('application/json', false);
+            const requestOptions = utils_1.getDownloadRequestOptions('application/json');
             const rawResponse = yield client.get(resourceUrl.toString(), requestOptions);
             const body = yield rawResponse.readBody();
             if (utils_1.isSuccessStatusCode(rawResponse.message.statusCode) && body) {
@@ -3436,7 +3436,7 @@ class DownloadHttpClient {
             let retryCount = 0;
             const retryLimit = config_variables_1.getRetryLimit();
             const destinationStream = fs.createWriteStream(downloadPath);
-            const requestOptions = utils_1.getDownloadRequestOptions('application/json', true, true, 'application/octet-stream');
+            const requestOptions = utils_1.getDownloadRequestOptions('application/json', true, true);
             requestOptions;
             // a single GET request is used to download a file
             const makeDownloadRequest = () => __awaiter(this, void 0, void 0, function* () {
@@ -4606,7 +4606,7 @@ function getInitialRetryIntervalInMilliseconds() {
 }
 exports.getInitialRetryIntervalInMilliseconds = getInitialRetryIntervalInMilliseconds;
 function getDownloadFileConcurrency() {
-    return 3;
+    return 2;
 }
 exports.getDownloadFileConcurrency = getDownloadFileConcurrency;
 function getRuntimeToken() {
@@ -5030,11 +5030,13 @@ function getContentRange(start, end, total) {
 exports.getContentRange = getContentRange;
 /**
  * Sets all the necessary headers when downloading an artifact
- * @param {string} acceptType the type of content that we can accept
  * @param {string} contentType the type of content being uploaded
  * @param {boolean} isKeepAlive is the same connection being used to make multiple calls
+ * @param {boolean} acceptGzip can we accept a gzip encoded response
+ * @param {string} acceptType the type of content that we can accept
+ * @returns appropriate request options to make a specific http call during artifact download
  */
-function getDownloadRequestOptions(contentType, isKeepAlive, acceptGzip, acceptType) {
+function getDownloadRequestOptions(contentType, isKeepAlive, acceptGzip) {
     const requestOptions = {};
     if (contentType) {
         requestOptions['Content-Type'] = contentType;
@@ -5045,12 +5047,14 @@ function getDownloadRequestOptions(contentType, isKeepAlive, acceptGzip, acceptT
         requestOptions['Keep-Alive'] = '10';
     }
     if (acceptGzip) {
+        // if we are expecting a response with gzip encoding, it should be using an octet-stream in the accept header
         requestOptions['Accept-Encoding'] = 'gzip';
+        requestOptions['Accept'] = `application/octet-stream;api-version=${getApiVersion()}`;
     }
-    // default to application/json if an accept type is not provided
-    acceptType
-        ? (requestOptions['Accept'] = `${acceptType};api-version=${getApiVersion()}`)
-        : (requestOptions['Accept'] = `application/json;api-version=${getApiVersion()}`);
+    else {
+        // default to application/json if we are not working with gzip content
+        requestOptions['Accept'] = `application/json;api-version=${getApiVersion()}`;
+    }
     return requestOptions;
 }
 exports.getDownloadRequestOptions = getDownloadRequestOptions;
