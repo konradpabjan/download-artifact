@@ -1225,7 +1225,7 @@ class UploadHttpClient {
             const artifactUrl = utils_1.getArtifactUrl();
             // use the first client from the httpManager, `keep-alive` is not used so the connection will close immediatly
             const client = this.uploadHttpManager.getClient(0);
-            const requestOptions = utils_1.getRequestOptions('application/json');
+            const requestOptions = utils_1.getUploadRequestOptions('application/json', false);
             const rawResponse = yield client.post(artifactUrl, data, requestOptions);
             const body = yield rawResponse.readBody();
             if (utils_1.isSuccessStatusCode(rawResponse.message.statusCode) && body) {
@@ -1435,15 +1435,17 @@ class UploadHttpClient {
     uploadChunk(httpClientIndex, resourceUrl, data, start, end, uploadFileSize, isGzip, totalFileSize) {
         return __awaiter(this, void 0, void 0, function* () {
             // prepare all the necessary headers before making any http call
-            const requestOptions = utils_1.getRequestOptions('application/json', 'application/octet-stream', true, isGzip, totalFileSize, end - start + 1, utils_1.getContentRange(start, end, uploadFileSize));
+            const requestOptions = utils_1.getUploadRequestOptions('application/octet-stream', true, isGzip, totalFileSize, end - start + 1, utils_1.getContentRange(start, end, uploadFileSize));
             const uploadChunkRequest = () => __awaiter(this, void 0, void 0, function* () {
                 const client = this.uploadHttpManager.getClient(httpClientIndex);
                 return yield client.sendStream('PUT', resourceUrl, data, requestOptions);
             });
             let retryCount = 0;
             const retryLimit = config_variables_1.getRetryLimit();
-            // checks if the retry limit has been reached
-            const isRetryLimitExceeded = (message) => {
+            // Increments the current retry count and then checks if the retry limit has been reached
+            // If there have been too many retries, fail so the download stops
+            const incrementAndCheckRetryLimit = (message) => {
+                retryCount++;
                 if (retryCount > retryLimit) {
                     if (message) {
                         // eslint-disable-next-line no-console
@@ -1488,8 +1490,7 @@ class UploadHttpClient {
                         }
                         else {
                             // no retry time available, differ to standard exponential backoff
-                            retryCount++;
-                            if (isRetryLimitExceeded(response)) {
+                            if (incrementAndCheckRetryLimit(response)) {
                                 return false;
                             }
                             yield backoffExponentially();
@@ -1497,8 +1498,7 @@ class UploadHttpClient {
                     }
                     else if (utils_1.isRetryableStatusCode(response.message.statusCode)) {
                         core_1.info(`A ${response.message.statusCode} status code has been recieved, will attempt to retry the upload`);
-                        retryCount++;
-                        if (isRetryLimitExceeded(response)) {
+                        if (incrementAndCheckRetryLimit(response)) {
                             return false;
                         }
                         yield backoffExponentially();
@@ -1515,8 +1515,7 @@ class UploadHttpClient {
                     core_1.info(`An error has been caught http-client index ${httpClientIndex}, retrying the upload`);
                     // eslint-disable-next-line no-console
                     console.log(error);
-                    retryCount++;
-                    if (isRetryLimitExceeded()) {
+                    if (incrementAndCheckRetryLimit()) {
                         return false;
                     }
                     yield backoffExponentially();
@@ -1531,7 +1530,7 @@ class UploadHttpClient {
      */
     patchArtifactSize(size, artifactName) {
         return __awaiter(this, void 0, void 0, function* () {
-            const requestOptions = utils_1.getRequestOptions('application/json');
+            const requestOptions = utils_1.getUploadRequestOptions('application/json', false);
             const resourceUrl = new url_1.URL(utils_1.getArtifactUrl());
             resourceUrl.searchParams.append('artifactName', artifactName);
             const parameters = { Size: size };
@@ -3362,7 +3361,7 @@ class DownloadHttpClient {
             const artifactUrl = utils_1.getArtifactUrl();
             // use the first client from the httpManager, `keep-alive` is not used so the connection will close immediatly
             const client = this.downloadHttpManager.getClient(0);
-            const requestOptions = utils_1.getRequestOptions('application/json');
+            const requestOptions = utils_1.getDownloadRequestOptions('application/json', false);
             const rawResponse = yield client.get(artifactUrl, requestOptions);
             const body = yield rawResponse.readBody();
             if (utils_1.isSuccessStatusCode(rawResponse.message.statusCode) && body) {
@@ -3385,7 +3384,7 @@ class DownloadHttpClient {
             resourceUrl.searchParams.append('itemPath', artifactName);
             // use the first client from the httpManager, `keep-alive` is not used so the connection will close immediatly
             const client = this.downloadHttpManager.getClient(0);
-            const requestOptions = utils_1.getRequestOptions('application/json');
+            const requestOptions = utils_1.getDownloadRequestOptions('application/json', false);
             const rawResponse = yield client.get(resourceUrl.toString(), requestOptions);
             const body = yield rawResponse.readBody();
             if (utils_1.isSuccessStatusCode(rawResponse.message.statusCode) && body) {
@@ -3437,7 +3436,8 @@ class DownloadHttpClient {
             let retryCount = 0;
             const retryLimit = config_variables_1.getRetryLimit();
             const destinationStream = fs.createWriteStream(downloadPath);
-            const requestOptions = utils_1.getRequestOptions('application/octet-stream', 'application/json', true);
+            const requestOptions = utils_1.getDownloadRequestOptions('application/json', true, 'application/octet-stream');
+            requestOptions;
             // a single GET request is used to download a file
             const makeDownloadRequest = () => __awaiter(this, void 0, void 0, function* () {
                 const client = this.downloadHttpManager.getClient(httpClientIndex);
@@ -5029,24 +5029,46 @@ function getContentRange(start, end, total) {
 }
 exports.getContentRange = getContentRange;
 /**
- * Sets all the necessary headers when making HTTP calls
- * @param {string} acceptType the type of content taht we can accept
+ * Sets all the necessary headers when downloading an artifact
+ * @param {string} acceptType the type of content that we can accept
+ * @param {string} contentType the type of content being uploaded
+ * @param {boolean} isKeepAlive is the same connection being used to make multiple calls
+ */
+function getDownloadRequestOptions(contentType, isKeepAlive, acceptType) {
+    const requestOptions = {};
+    requestOptions['Accept-Encoding'] = 'gzip';
+    // optional headers that are not always needed during artifact download
+    if (contentType) {
+        requestOptions['Content-Type'] = contentType;
+    }
+    if (isKeepAlive) {
+        requestOptions['Connection'] = 'Keep-Alive';
+        // keep alive for at least 10 seconds before closing the connection
+        requestOptions['Keep-Alive'] = '10';
+    }
+    // default to application/json if an accept type is not provided
+    acceptType
+        ? (requestOptions['Accept'] = `${acceptType};api-version=${getApiVersion()}`)
+        : (requestOptions['Accept'] = `application/json;api-version=${getApiVersion()}`);
+    return requestOptions;
+}
+exports.getDownloadRequestOptions = getDownloadRequestOptions;
+/**
+ * Sets all the necessary headers when uploading an artifact
  * @param {string} contentType the type of content being uploaded
  * @param {boolean} isKeepAlive is the same connection being used to make multiple calls
  * @param {boolean} isGzip is the connection being used to upload GZip compressed content
  * @param {number} uncompressedLength the original size of the content if something is being uploaded that has been compressed
  * @param {number} contentLength the length of the content that is being uploaded
  * @param {string} contentRange the range of the content that is being uploaded
- * @returns appropriate request options to make a specific http call
+ * @returns appropriate request options to make a specific http call during artifact upload
  */
-function getRequestOptions(acceptType, contentType, isKeepAlive, isGzip, uncompressedLength, contentLength, contentRange) {
+function getUploadRequestOptions(contentType, isKeepAlive, isGzip, uncompressedLength, contentLength, contentRange) {
     const requestOptions = {};
-    requestOptions['Accept-Encoding'] = 'gzip';
-    requestOptions['Accept'] = `${acceptType};api-version=${getApiVersion()}`;
-    // default to application/json if no Content-Type is provided
-    contentType
-        ? (requestOptions['Content-Type'] = contentType)
-        : (requestOptions['Content-Type'] = 'application/json');
+    requestOptions['Accept'] = `application/json;api-version=${getApiVersion()}`;
+    if (contentType) {
+        requestOptions['Content-Type'] = contentType;
+    }
     if (isKeepAlive) {
         requestOptions['Connection'] = 'Keep-Alive';
         // keep alive for at least 10 seconds before closing the connection
@@ -5064,7 +5086,7 @@ function getRequestOptions(acceptType, contentType, isKeepAlive, isGzip, uncompr
     }
     return requestOptions;
 }
-exports.getRequestOptions = getRequestOptions;
+exports.getUploadRequestOptions = getUploadRequestOptions;
 function createHttpClient() {
     return new http_client_1.HttpClient('action/artifact', [
         new auth_1.BearerCredentialHandler(config_variables_1.getRuntimeToken())
