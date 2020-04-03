@@ -3507,16 +3507,22 @@ class DownloadHttpClient {
             yield new Promise((resolve, reject) => {
                 if (isGzip) {
                     const gunzip = zlib.createGunzip();
+                    // For testing
+                    reject('some warning, what will happen?');
+                    /*
                     response.message
-                        .pipe(gunzip)
-                        .pipe(destinationStream)
-                        .on('close', () => {
-                        resolve();
-                    })
-                        .on('error', error => {
-                        core_1.info(`An error has been encountered while gunzipping and writing a downloaded file to ${destinationStream.path}`);
-                        reject(error);
-                    });
+                      .pipe(gunzip)
+                      .pipe(destinationStream)
+                      .on('close', () => {
+                        resolve()
+                      })
+                      .on('error', error => {
+                        info(
+                          `An error has been encountered while gunzipping and writing a downloaded file to ${destinationStream.path}`
+                        )
+                        reject(error)
+                      })
+                    */
                 }
                 else {
                     response.message
