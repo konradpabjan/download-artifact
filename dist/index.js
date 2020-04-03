@@ -3403,16 +3403,14 @@ class DownloadHttpClient {
                     const currentFileToDownload = downloadItems[currentFile];
                     currentFile += 1;
                     const startTime = perf_hooks_1.performance.now();
-                    yield this.downloadIndividualFile(index, currentFileToDownload.sourceLocation, currentFileToDownload.targetPath).catch(error => {
-                        return new Promise((resolve, reject) => {
-                            reject(error);
-                        });
-                    });
+                    yield this.downloadIndividualFile(index, currentFileToDownload.sourceLocation, currentFileToDownload.targetPath);
                     core_1.info('infinite loop inside downloadSingleArtifact');
                     core_1.debug(`File: ${++downloadedFiles}/${downloadItems.length}. ${currentFileToDownload.targetPath} took ${(perf_hooks_1.performance.now() - startTime).toFixed(3)} milliseconds to finish downloading`);
                     this.statusReporter.incrementProcessedCount();
                 }
-            })));
+            }))).catch(error => {
+                console.error(error.message);
+            });
             this.statusReporter.stop();
             // done downloading, safety dispose all connections
             this.downloadHttpManager.disposeAndReplaceAllClients();
