@@ -3494,6 +3494,7 @@ class DownloadHttpClient {
                     console.log(response);
                     throw new Error(`###ERROR### Unable to download ${artifactLocation} ###`);
                 }
+                core_1.info('what about now?');
             }
         });
     }
