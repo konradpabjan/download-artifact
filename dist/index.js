@@ -3404,6 +3404,7 @@ class DownloadHttpClient {
                     currentFile += 1;
                     const startTime = perf_hooks_1.performance.now();
                     yield this.downloadIndividualFile(index, currentFileToDownload.sourceLocation, currentFileToDownload.targetPath);
+                    core_1.info('infinite loop inside downloadSingleArtifact');
                     core_1.debug(`File: ${++downloadedFiles}/${downloadItems.length}. ${currentFileToDownload.targetPath} took ${(perf_hooks_1.performance.now() - startTime).toFixed(3)} milliseconds to finish downloading`);
                     this.statusReporter.incrementProcessedCount();
                 }
@@ -3473,6 +3474,7 @@ class DownloadHttpClient {
                     yield backOff();
                     continue;
                 }
+                core_1.info('infinite loop inside downloadIndividualFile');
                 if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
                     // The body contains the contents of the file however calling response.readBody() causes all the content to be converted to a string
                     // which can cause some gzip encoded data to be lost
