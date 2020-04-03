@@ -3477,7 +3477,9 @@ class DownloadHttpClient {
                     // The body contains the contents of the file however calling response.readBody() causes all the content to be converted to a string
                     // which can cause some gzip encoded data to be lost
                     // Instead of using response.readBody(), response.message is a readableStream that can be directly used to get the raw body contents
-                    yield this.pipeResponseToFile(response, destinationStream, isGzip(response.message.headers));
+                    yield this.pipeResponseToFile(response, destinationStream, isGzip(response.message.headers)).catch(err => {
+                        throw new Error(err);
+                    });
                     return;
                 }
                 else if (utils_1.isRetryableStatusCode(response.message.statusCode)) {
