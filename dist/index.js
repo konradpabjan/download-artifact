@@ -1223,7 +1223,7 @@ class UploadHttpClient {
             };
             const data = JSON.stringify(parameters, null, 2);
             const artifactUrl = utils_1.getArtifactUrl();
-            // use the first client from the httpManager, `keep-alive` is not used so the connection will close immediatly
+            // use the first client from the httpManager, `keep-alive` is not used so the connection will close immediately
             const client = this.uploadHttpManager.getClient(0);
             const requestOptions = utils_1.getUploadRequestOptions('application/json', false);
             const rawResponse = yield client.post(artifactUrl, data, requestOptions);
@@ -1289,7 +1289,7 @@ class UploadHttpClient {
                     const startTime = perf_hooks_1.performance.now();
                     const uploadFileResult = yield this.uploadFileAsync(index, currentFileParameters);
                     core_1.debug(`File: ${++completedFiles}/${filesToUpload.length}. ${currentFileParameters.file} took ${(perf_hooks_1.performance.now() - startTime).toFixed(3)} milliseconds to finish upload`);
-                    uploadFileSize += uploadFileResult.successfullUploadSize;
+                    uploadFileSize += uploadFileResult.successfulUploadSize;
                     totalFileSize += uploadFileResult.totalSize;
                     if (uploadFileResult.isSuccess === false) {
                         failedItemsToReport.push(currentFileParameters.file);
@@ -1328,7 +1328,7 @@ class UploadHttpClient {
             let failedChunkSizes = 0;
             let uploadFileSize = 0;
             let isGzip = true;
-            // the file that is being uploaded is less than 64k in size, to increase thoroughput and to minimize disk I/O
+            // the file that is being uploaded is less than 64k in size, to increase throughput and to minimize disk I/O
             // for creating a new GZip file, an in-memory buffer is used for compression
             if (totalFileSize < 65536) {
                 const buffer = yield upload_gzip_1.createGZipFileInBuffer(parameters.file);
@@ -1355,12 +1355,12 @@ class UploadHttpClient {
                 }
                 return {
                     isSuccess: isUploadSuccessful,
-                    successfullUploadSize: uploadFileSize - failedChunkSizes,
+                    successfulUploadSize: uploadFileSize - failedChunkSizes,
                     totalSize: totalFileSize
                 };
             }
             else {
-                // the file that is being uploaded is greater than 64k in size, a temprorary file gets created on disk using the
+                // the file that is being uploaded is greater than 64k in size, a temporary file gets created on disk using the
                 // npm tmp-promise package and this file gets used during compression for the GZip file that gets created
                 return tmp
                     .file()
@@ -1411,7 +1411,7 @@ class UploadHttpClient {
                     return new Promise(resolve => {
                         resolve({
                             isSuccess: isUploadSuccessful,
-                            successfullUploadSize: uploadFileSize - failedChunkSizes,
+                            successfulUploadSize: uploadFileSize - failedChunkSizes,
                             totalSize: totalFileSize
                         });
                     });
@@ -1456,20 +1456,18 @@ class UploadHttpClient {
                 }
                 return false;
             };
-            // back off exponentially based off of the retry count.
-            const backoffExponentially = () => __awaiter(this, void 0, void 0, function* () {
+            const backOff = (retryAfterValue) => __awaiter(this, void 0, void 0, function* () {
                 this.uploadHttpManager.disposeAndReplaceClient(httpClientIndex);
-                const backoffTime = utils_1.getExponentialRetryTimeInMilliseconds(retryCount);
-                core_1.info(`Exponential backoff for retry #${retryCount}. Waiting for ${backoffTime} milliseconds before continuing the upload at offset ${start}`);
-                yield new Promise(resolve => setTimeout(resolve, backoffTime));
-                core_1.info(`Finished exponential backoff for retry #${retryCount}, continuing with upload`);
-                return;
-            });
-            const backOffUsingRetryValue = (retryAfterValue) => __awaiter(this, void 0, void 0, function* () {
-                core_1.info(`disposing client with index ${httpClientIndex}`);
-                this.uploadHttpManager.disposeAndReplaceClient(httpClientIndex);
-                core_1.info(`Backoff due to too many requests, retry #${retryCount}. Waiting for ${retryAfterValue} milliseconds before continuing the upload`);
-                core_1.info(`Finished backoff due to too many requests for retry #${retryCount}, continuing with upload`);
+                if (retryAfterValue) {
+                    core_1.info(`Backoff due to too many requests, retry #${retryCount}. Waiting for ${retryAfterValue} milliseconds before continuing the upload`);
+                    yield new Promise(resolve => setTimeout(resolve, retryAfterValue));
+                }
+                else {
+                    const backoffTime = utils_1.getExponentialRetryTimeInMilliseconds(retryCount);
+                    core_1.info(`Exponential backoff for retry #${retryCount}. Waiting for ${backoffTime} milliseconds before continuing the upload at offset ${start}`);
+                    yield new Promise(resolve => setTimeout(resolve, backoffTime));
+                }
+                core_1.info(`Finished backoff for retry #${retryCount}, continuing with upload`);
                 return;
             });
             // allow for failed chunks to be retried multiple times
@@ -1482,26 +1480,14 @@ class UploadHttpClient {
                     if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
                         return true;
                     }
-                    else if (utils_1.isThrottledStatusCode(response.message.statusCode)) {
-                        core_1.info('A 429 response code has been recieved when attempting to download an artifact');
-                        const retryAfterValue = utils_1.tryGetRetryAfterValueTimeInMilliseconds(response.message.headers);
-                        if (retryAfterValue) {
-                            yield backOffUsingRetryValue(retryAfterValue);
-                        }
-                        else {
-                            // no retry time available, differ to standard exponential backoff
-                            if (incrementAndCheckRetryLimit(response)) {
-                                return false;
-                            }
-                            yield backoffExponentially();
-                        }
-                    }
                     else if (utils_1.isRetryableStatusCode(response.message.statusCode)) {
-                        core_1.info(`A ${response.message.statusCode} status code has been recieved, will attempt to retry the upload`);
+                        core_1.info(`A ${response.message.statusCode} status code has been received, will attempt to retry the upload`);
                         if (incrementAndCheckRetryLimit(response)) {
                             return false;
                         }
-                        yield backoffExponentially();
+                        utils_1.isThrottledStatusCode(response.message.statusCode)
+                            ? yield backOff(utils_1.tryGetRetryAfterValueTimeInMilliseconds(response.message.headers))
+                            : yield backOff();
                     }
                     else {
                         core_1.info(`###ERROR### Unexpected response. Unable to upload chunk to ${resourceUrl}`);
@@ -1511,14 +1497,14 @@ class UploadHttpClient {
                     }
                 }
                 catch (error) {
-                    // if an error is catched, it is usually indicative of a timeout so retry the upload
+                    // if an error is caught, it is usually indicative of a timeout so retry the upload
                     core_1.info(`An error has been caught http-client index ${httpClientIndex}, retrying the upload`);
                     // eslint-disable-next-line no-console
                     console.log(error);
                     if (incrementAndCheckRetryLimit()) {
                         return false;
                     }
-                    yield backoffExponentially();
+                    yield backOff();
                 }
             }
             return false;
@@ -1536,7 +1522,7 @@ class UploadHttpClient {
             const parameters = { Size: size };
             const data = JSON.stringify(parameters, null, 2);
             core_1.debug(`URL is ${resourceUrl.toString()}`);
-            // use the first client from the httpManager, `keep-alive` is not used so the connection will close immediatly
+            // use the first client from the httpManager, `keep-alive` is not used so the connection will close immediately
             const client = this.uploadHttpManager.getClient(0);
             const rawResponse = yield client.patch(resourceUrl.toString(), data, requestOptions);
             const body = yield rawResponse.readBody();
@@ -3359,7 +3345,7 @@ class DownloadHttpClient {
     listArtifacts() {
         return __awaiter(this, void 0, void 0, function* () {
             const artifactUrl = utils_1.getArtifactUrl();
-            // use the first client from the httpManager, `keep-alive` is not used so the connection will close immediatly
+            // use the first client from the httpManager, `keep-alive` is not used so the connection will close immediately
             const client = this.downloadHttpManager.getClient(0);
             const requestOptions = utils_1.getDownloadRequestOptions('application/json');
             const rawResponse = yield client.get(artifactUrl, requestOptions);
@@ -3382,7 +3368,7 @@ class DownloadHttpClient {
             // the itemPath search parameter controls which containers will be returned
             const resourceUrl = new url_1.URL(containerUrl);
             resourceUrl.searchParams.append('itemPath', artifactName);
-            // use the first client from the httpManager, `keep-alive` is not used so the connection will close immediatly
+            // use the first client from the httpManager, `keep-alive` is not used so the connection will close immediately
             const client = this.downloadHttpManager.getClient(0);
             const requestOptions = utils_1.getDownloadRequestOptions('application/json');
             const rawResponse = yield client.get(resourceUrl.toString(), requestOptions);
@@ -3442,38 +3428,33 @@ class DownloadHttpClient {
                 const client = this.downloadHttpManager.getClient(httpClientIndex);
                 return yield client.get(artifactLocation, requestOptions);
             });
-            // Increments the current retry count and then checks if the retry limit has been reached
-            // If there have been too many retries, fail so the download stops
-            const incrementAndCheckRetryLimit = (response) => {
-                retryCount++;
-                if (retryCount > retryLimit) {
-                    if (response) {
-                        // display extra information if the retry limit has been reached
-                        // eslint-disable-next-line no-console
-                        console.log(response);
-                    }
-                    throw new Error(`Unable to download ${artifactLocation}. Retry limit has been reached`);
-                }
-            };
-            // Back off exponentially based off of the retry count.
-            const backoffExponentially = () => __awaiter(this, void 0, void 0, function* () {
-                this.downloadHttpManager.disposeAndReplaceClient(httpClientIndex);
-                const backoffTime = utils_1.getExponentialRetryTimeInMilliseconds(retryCount);
-                core_1.info(`Exponential backoff for retry #${retryCount}. Waiting for ${backoffTime} milliseconds before continuing the download`);
-                yield new Promise(resolve => setTimeout(resolve, utils_1.getExponentialRetryTimeInMilliseconds(retryCount)));
-                core_1.info(`Finished exponential backoff for retry #${retryCount}, continuing with upload`);
-                return;
-            });
             // check the response headers to determine if the file was compressed using gzip
             const isGzip = (headers) => {
                 return ('content-encoding' in headers && headers['content-encoding'] === 'gzip');
             };
-            const backOffUsingRetryValue = (retryAfterValue) => __awaiter(this, void 0, void 0, function* () {
-                this.downloadHttpManager.disposeAndReplaceClient(httpClientIndex);
-                core_1.info(`Backoff due to too many requests, retry #${retryCount}. Waiting for ${retryAfterValue} milliseconds before continuing the download`);
-                yield new Promise(resolve => setTimeout(resolve, retryAfterValue));
-                core_1.info(`Finished backoff due to too many requests for retry #${retryCount}, continuing with download`);
-                return;
+            // Increments the current retry count and then checks if the retry limit has been reached
+            // If there have been too many retries, fail so the download stops. If there is a retryAfterValue value provided,
+            // it will be used
+            const backOff = (retryAfterValue) => __awaiter(this, void 0, void 0, function* () {
+                retryCount++;
+                if (retryCount > retryLimit) {
+                    throw new Error(`Unable to download ${artifactLocation}. Retry limit has been reached`);
+                }
+                else {
+                    this.downloadHttpManager.disposeAndReplaceClient(httpClientIndex);
+                    if (retryAfterValue) {
+                        // Back off exponentially based off of the retry count
+                        core_1.info(`Backoff due to too many requests, retry #${retryCount}. Waiting for ${retryAfterValue} milliseconds before continuing the download`);
+                        yield new Promise(resolve => setTimeout(resolve, retryAfterValue));
+                    }
+                    else {
+                        // Back off using an exponential value that depends on the retry count
+                        const backoffTime = utils_1.getExponentialRetryTimeInMilliseconds(retryCount);
+                        core_1.info(`Exponential backoff for retry #${retryCount}. Waiting for ${backoffTime} milliseconds before continuing the download`);
+                        yield new Promise(resolve => setTimeout(resolve, backoffTime));
+                    }
+                    core_1.info(`Finished backoff for retry #${retryCount}, continuing with download`);
+                }
             });
             // keep trying to download a file until a retry limit has been reached
             while (retryCount <= retryLimit) {
@@ -3482,41 +3463,30 @@ class DownloadHttpClient {
                     response = yield makeDownloadRequest();
                 }
                 catch (error) {
-                    // if an error is catched, it is usually indicative of a timeout so retry the download
+                    // if an error is caught, it is usually indicative of a timeout so retry the download
                     core_1.info('An error has been caught, while attempting to download a file');
                     // eslint-disable-next-line no-console
                     console.log(error);
                     // increment the retryCount and use exponential backoff to wait before making the next request
-                    incrementAndCheckRetryLimit();
-                    yield backoffExponentially();
+                    yield backOff();
                     continue;
                 }
                 if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
-                    // The body contains the contents of the file however calling response.readBody() casues all the content to be converted to a string
-                    // which can cause some gzip encoded data to lost
-                    // Instead of using response.readBody(), response.message is a readablestream that can be directly used to get the raw body contents
+                    // The body contains the contents of the file however calling response.readBody() causes all the content to be converted to a string
+                    // which can cause some gzip encoded data to be lost
+                    // Instead of using response.readBody(), response.message is a readableStream that can be directly used to get the raw body contents
                     yield this.pipeResponseToFile(response, destinationStream, isGzip(response.message.headers));
                     return;
                 }
-                else if (utils_1.isThrottledStatusCode(response.message.statusCode)) {
-                    core_1.info('A 429 response code has been recieved when attempting to download an artifact');
-                    const retryAfterValue = utils_1.tryGetRetryAfterValueTimeInMilliseconds(response.message.headers);
-                    if (retryAfterValue) {
-                        incrementAndCheckRetryLimit();
-                        yield backOffUsingRetryValue(retryAfterValue);
-                    }
-                    else {
-                        // no retry time available, differ to standard exponential backoff
-                        incrementAndCheckRetryLimit(response);
-                        yield backoffExponentially();
-                    }
-                }
                 else if (utils_1.isRetryableStatusCode(response.message.statusCode)) {
-                    incrementAndCheckRetryLimit(response);
-                    yield backoffExponentially();
+                    core_1.info(`A ${response.message.statusCode} response code has been received while attempting to download an artifact`);
+                    // if a throttled status code is received, try to get the retryAfter header value, else differ to standard exponential backoff
+                    utils_1.isThrottledStatusCode(response.message.statusCode)
+                        ? yield backOff(utils_1.tryGetRetryAfterValueTimeInMilliseconds(response.message.headers))
+                        : yield backOff();
                 }
                 else {
-                    // Some unexpected response code, fail immediatly and stop the download
+                    // Some unexpected response code, fail immediately and stop the download
                     // eslint-disable-next-line no-console
                     console.log(response);
                     throw new Error(`###ERROR### Unable to download ${artifactLocation} ###`);
@@ -3526,7 +3496,7 @@ class DownloadHttpClient {
     }
     /**
      * Pipes the response from downloading an individual file to the appropriate destination stream while decoding gzip content if necessary
-     * @param response the http response recieved when downloading a file
+     * @param response the http response received when downloading a file
      * @param destinationStream the stream where the file should be written to
      * @param isGzip a boolean denoting if the content is compressed using gzip and if we need to decode it
      */
@@ -4532,7 +4502,7 @@ function createGZipFileInBuffer(originalFilePath) {
             const inputStream = fs.createReadStream(originalFilePath);
             const gzip = zlib.createGzip();
             inputStream.pipe(gzip);
-            // read stream into buffer, using experimental async itterators see https://github.com/nodejs/readable-stream/issues/403#issuecomment-479069043
+            // read stream into buffer, using experimental async iterators see https://github.com/nodejs/readable-stream/issues/403#issuecomment-479069043
             const chunks = [];
             try {
                 for (var gzip_1 = __asyncValues(gzip), gzip_1_1; gzip_1_1 = yield gzip_1.next(), !gzip_1_1.done;) {
@@ -4985,7 +4955,8 @@ function isRetryableStatusCode(statusCode) {
     const retryableStatusCodes = [
         http_client_1.HttpCodes.BadGateway,
         http_client_1.HttpCodes.ServiceUnavailable,
-        http_client_1.HttpCodes.GatewayTimeout
+        http_client_1.HttpCodes.GatewayTimeout,
+        429 // TODO, change when a new version of @actions/http-client gets released
     ];
     return retryableStatusCodes.includes(statusCode);
 }
@@ -5000,7 +4971,7 @@ function isThrottledStatusCode(statusCode) {
 exports.isThrottledStatusCode = isThrottledStatusCode;
 /**
  * Attempts to get the retry-after value from a set of http headers. The retry time
- * is orginally denoted in seconds, so if present, it is converted to milliseconds
+ * is originally denoted in seconds, so if present, it is converted to milliseconds
  * @param headers all the headers received when making an http call
  */
 function tryGetRetryAfterValueTimeInMilliseconds(headers) {
@@ -5010,7 +4981,7 @@ function tryGetRetryAfterValueTimeInMilliseconds(headers) {
             core_1.info(`retry-after headers is present with a value of ${retryTime}`);
             return retryTime * 1000;
         }
-        core_1.info(`returned retry-after header value: ${retryTime} is non-numberic and cannot be used`);
+        core_1.info(`returned retry-after header value: ${retryTime} is non-numeric and cannot be used`);
         return undefined;
     }
     core_1.info(`no retry-after header was found. Dumping all headers for diagnostic purposes`);
@@ -7229,8 +7200,9 @@ const core_1 = __webpack_require__(211);
 /**
  * Status Reporter that displays information about the progress/status of an artifact that is being uploaded or downloaded
  *
- * Every 10 seconds, the total status of the upload/download gets displayed. If there is a large file that is being uploaded,
- * extra information about the individual status of an upload/download can also be displayed
+ * Variable display time that can be adjusted using the displayFrequencyInMilliseconds variable.
+ * The total status of the upload/download gets displayed according to this value.
+ * If there is a large file that is being uploaded, extra information about the individual status can also be displayed using the updateLargeFileStatus function
  */
 class StatusReporter {
     constructor(displayFrequencyInMilliseconds) {
@@ -7262,9 +7234,9 @@ class StatusReporter {
         }, 1000);
     }
     // if there is a large file that is being uploaded in chunks, this is used to display extra information about the status of the upload
-    updateLargeFileStatus(fileName, numerator, denomiator) {
+    updateLargeFileStatus(fileName, numerator, denominator) {
         // display 1 decimal place without any rounding
-        const percentage = this.formatPercentage(numerator, denomiator);
+        const percentage = this.formatPercentage(numerator, denominator);
         const displayInformation = `Uploading ${fileName} (${percentage.slice(0, percentage.indexOf('.') + 2)}%)`;
         // any previously added display information should be overwritten for the specific large file because a map is being used
         this.largeFiles.set(fileName, displayInformation);
