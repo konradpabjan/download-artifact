@@ -3404,6 +3404,7 @@ class DownloadHttpClient {
                     currentFile += 1;
                     const startTime = perf_hooks_1.performance.now();
                     yield this.downloadIndividualFile(index, currentFileToDownload.sourceLocation, currentFileToDownload.targetPath).catch(error => {
+                        core_1.info('was this caught here? -----');
                         throw new Error(error);
                     });
                     core_1.info('infinite loop inside downloadSingleArtifact');
