@@ -1472,29 +1472,9 @@ class UploadHttpClient {
             });
             // allow for failed chunks to be retried multiple times
             while (retryCount <= retryLimit) {
+                let response;
                 try {
-                    const response = yield uploadChunkRequest();
-                    // Always read the body of the response. There is potential for a resource leak if the body is not read which will
-                    // result in the connection remaining open along with unintended consequences when trying to dispose of the client
-                    yield response.readBody();
-                    if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
-                        return true;
-                    }
-                    else if (utils_1.isRetryableStatusCode(response.message.statusCode)) {
-                        core_1.info(`A ${response.message.statusCode} status code has been received, will attempt to retry the upload`);
-                        if (incrementAndCheckRetryLimit(response)) {
-                            return false;
-                        }
-                        utils_1.isThrottledStatusCode(response.message.statusCode)
-                            ? yield backOff(utils_1.tryGetRetryAfterValueTimeInMilliseconds(response.message.headers))
-                            : yield backOff();
-                    }
-                    else {
-                        core_1.info(`###ERROR### Unexpected response. Unable to upload chunk to ${resourceUrl}`);
-                        // eslint-disable-next-line no-console
-                        console.log(response);
-                        return false;
-                    }
+                    response = yield uploadChunkRequest();
                 }
                 catch (error) {
                     // if an error is caught, it is usually indicative of a timeout so retry the upload
@@ -1505,6 +1485,28 @@ class UploadHttpClient {
                         return false;
                     }
                     yield backOff();
+                    continue;
+                }
+                // Always read the body of the response. There is potential for a resource leak if the body is not read which will
+                // result in the connection remaining open along with unintended consequences when trying to dispose of the client
+                yield response.readBody();
+                if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
+                    return true;
+                }
+                else if (utils_1.isRetryableStatusCode(response.message.statusCode)) {
+                    core_1.info(`A ${response.message.statusCode} status code has been received, will attempt to retry the upload`);
+                    if (incrementAndCheckRetryLimit(response)) {
+                        return false;
+                    }
+                    utils_1.isThrottledStatusCode(response.message.statusCode)
+                        ? yield backOff(utils_1.tryGetRetryAfterValueTimeInMilliseconds(response.message.headers))
+                        : yield backOff();
+                }
+                else {
+                    core_1.info(`###ERROR### Unexpected response. Unable to upload chunk to ${resourceUrl}`);
+                    // eslint-disable-next-line no-console
+                    console.log(response);
+                    return false;
                 }
             }
             return false;
@@ -3512,7 +3514,7 @@ class DownloadHttpClient {
                         resolve();
                     })
                         .on('error', error => {
-                        core_1.info('An error has been encountered while processing the downloaded file');
+                        core_1.info(`An error has been encountered while gunzipping and writing a downloaded file to ${destinationStream.path}`);
                         reject(error);
                     });
                 }
@@ -3523,7 +3525,7 @@ class DownloadHttpClient {
                         resolve();
                     })
                         .on('error', error => {
-                        core_1.info('An error has been encountered while processing the downloaded file');
+                        core_1.info(`An error has been encountered while writing a downloaded file to ${destinationStream.path}`);
                         reject(error);
                     });
                 }
@@ -7200,8 +7202,8 @@ const core_1 = __webpack_require__(211);
 /**
  * Status Reporter that displays information about the progress/status of an artifact that is being uploaded or downloaded
  *
- * Variable display time that can be adjusted using the displayFrequencyInMilliseconds variable.
- * The total status of the upload/download gets displayed according to this value.
+ * Variable display time that can be adjusted using the displayFrequencyInMilliseconds variable
+ * The total status of the upload/download gets displayed according to this value
  * If there is a large file that is being uploaded, extra information about the individual status can also be displayed using the updateLargeFileStatus function
  */
 class StatusReporter {
