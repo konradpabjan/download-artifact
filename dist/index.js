@@ -5105,8 +5105,8 @@ function displayHttpDiagnostics(response) {
      HTTP Method: ${response.message.method}
      Status Code: ${response.message.statusCode}
      Status Message: ${response.message.statusMessage}
-     Raw Header Information: ${JSON.stringify(response.message.rawHeaders)}
-     Header Information: ${JSON.stringify(response.message.headers)}
+     Raw Header Information: ${JSON.stringify(response.message.rawHeaders.toString())}
+     Header Information: ${JSON.stringify(response.message.headers.toString())}
      `);
 }
 exports.displayHttpDiagnostics = displayHttpDiagnostics;
