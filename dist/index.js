@@ -3415,6 +3415,7 @@ class DownloadHttpClient {
                 this.statusReporter.stop();
                 // done downloading, safety dispose all connections
                 this.downloadHttpManager.disposeAndReplaceAllClients();
+                return;
             });
         });
     }
