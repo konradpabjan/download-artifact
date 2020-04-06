@@ -3483,6 +3483,7 @@ class DownloadHttpClient {
                     yield backOff();
                     continue;
                 }
+                utils_1.displayHttpDiagnostics(response);
                 if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
                     // The body contains the contents of the file however calling response.readBody() causes all the content to be converted to a string
                     // which can cause some gzip encoded data to be lost
@@ -4973,7 +4974,7 @@ function isRetryableStatusCode(statusCode) {
         http_client_1.HttpCodes.BadGateway,
         http_client_1.HttpCodes.ServiceUnavailable,
         http_client_1.HttpCodes.GatewayTimeout,
-        429 // TODO, change when a new version of @actions/http-client gets released
+        http_client_1.HttpCodes.TooManyRequests
     ];
     return retryableStatusCodes.includes(statusCode);
 }
@@ -4982,8 +4983,7 @@ function isThrottledStatusCode(statusCode) {
     if (!statusCode) {
         return false;
     }
-    // TODO, change when a new version of @actions/http-client gets released
-    return statusCode === 429;
+    return statusCode === http_client_1.HttpCodes.TooManyRequests;
 }
 exports.isThrottledStatusCode = isThrottledStatusCode;
 /**
@@ -5091,6 +5091,25 @@ function getArtifactUrl() {
     return artifactUrl;
 }
 exports.getArtifactUrl = getArtifactUrl;
+/**
+ * Uh oh! Something might have gone wrong during either upload or download. The IHtttpClientResponse object contains all the information
+ * about the http call that was made by the actions http client. This information might be useful to display for diagnostic purposes, but
+ * this entire object is really big and most of the information is not really useful. This function takes the response object and displays only
+ * the information that we want.
+ *
+ * Certain information such as the TLSSocket and the Readable state are not really useful for diagnostic purposes so they can be avoided.
+ * Other information such as the headers, rawHeaders, response Code. method and Path might prove useful, so this is displayed.
+ */
+function displayHttpDiagnostics(response) {
+    core_1.info(`Diagnostic information for the IHttpClientResponse
+     HTTP Method: ${response.message.method}
+     Status Code: ${response.message.statusCode}
+     Status Message: ${response.message.statusMessage}
+     Raw Header Information: ${JSON.stringify(response.message.rawHeaders)}
+     Header Information: ${JSON.stringify(response.message.headers)}
+     `);
+}
+exports.displayHttpDiagnostics = displayHttpDiagnostics;
 /**
  * Invalid characters that cannot be in the artifact name or an uploaded file. Will be rejected
  * from the server if attempted to be sent over. These characters are not allowed due to limitations with certain
@@ -7312,6 +7331,7 @@ var HttpCodes;
     HttpCodes[HttpCodes["RequestTimeout"] = 408] = "RequestTimeout";
     HttpCodes[HttpCodes["Conflict"] = 409] = "Conflict";
     HttpCodes[HttpCodes["Gone"] = 410] = "Gone";
+    HttpCodes[HttpCodes["TooManyRequests"] = 429] = "TooManyRequests";
     HttpCodes[HttpCodes["InternalServerError"] = 500] = "InternalServerError";
     HttpCodes[HttpCodes["NotImplemented"] = 501] = "NotImplemented";
     HttpCodes[HttpCodes["BadGateway"] = 502] = "BadGateway";
