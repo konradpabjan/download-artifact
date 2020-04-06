@@ -3483,7 +3483,7 @@ class DownloadHttpClient {
                     yield backOff();
                     continue;
                 }
-                utils_1.displayHttpDiagnostics(response);
+                utils_1.displayHttpDiagnostics(response, artifactLocation);
                 if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
                     // The body contains the contents of the file however calling response.readBody() causes all the content to be converted to a string
                     // which can cause some gzip encoded data to be lost
@@ -5092,21 +5092,23 @@ function getArtifactUrl() {
 }
 exports.getArtifactUrl = getArtifactUrl;
 /**
- * Uh oh! Something might have gone wrong during either upload or download. The IHtttpClientResponse object contains all the information
+ * Uh oh! Something might have gone wrong during either upload or download. The IHtttpClientResponse object contains information
  * about the http call that was made by the actions http client. This information might be useful to display for diagnostic purposes, but
  * this entire object is really big and most of the information is not really useful. This function takes the response object and displays only
  * the information that we want.
  *
  * Certain information such as the TLSSocket and the Readable state are not really useful for diagnostic purposes so they can be avoided.
- * Other information such as the headers, rawHeaders, response Code. method and Path might prove useful, so this is displayed.
+ * Other information such as the headers, the response code and message might be useful, so this is displayed.
  */
-function displayHttpDiagnostics(response) {
-    core_1.info(`##### Diagnostic IHttpClientResponse information #####
+function displayHttpDiagnostics(response, url) {
+    core_1.info(`##### Begin Diagnostic IHttpClientResponse information #####
 Status Code: ${response.message.statusCode}
 Status Message: ${response.message.statusMessage}
-Url: ${response.message.url}
-Raw Header Information: ${JSON.stringify(response.message.rawHeaders, undefined, 2)}
-Header Information: ${JSON.stringify(response.message.headers, undefined, 2)}`);
+Request Url: ${url}
+
+Header Information: ${JSON.stringify(response.message.headers, undefined, 2)}
+
+###### End Diagnostic IHttpClientResponse information ######`);
 }
 exports.displayHttpDiagnostics = displayHttpDiagnostics;
 /**
