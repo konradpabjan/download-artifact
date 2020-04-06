@@ -3477,6 +3477,7 @@ class DownloadHttpClient {
                     yield backOff();
                     continue;
                 }
+                utils_1.displayHttpDiagnostics(response);
                 if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
                     // The body contains the contents of the file however calling response.readBody() causes all the content to be converted to a string
                     // which can cause some gzip encoded data to be lost
