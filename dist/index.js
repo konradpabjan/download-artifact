@@ -3404,16 +3404,14 @@ class DownloadHttpClient {
                     currentFile += 1;
                     const startTime = perf_hooks_1.performance.now();
                     yield this.downloadIndividualFile(index, currentFileToDownload.sourceLocation, currentFileToDownload.targetPath);
-                    core_1.info('infinite loop inside downloadSingleArtifact');
                     core_1.debug(`File: ${++downloadedFiles}/${downloadItems.length}. ${currentFileToDownload.targetPath} took ${(perf_hooks_1.performance.now() - startTime).toFixed(3)} milliseconds to finish downloading`);
                     this.statusReporter.incrementProcessedCount();
                 }
             }))).catch(error => {
                 throw new Error(`###ERROR### Unable to download the artifact: ${error}`);
             }).finally(() => {
-                core_1.info('end!');
                 this.statusReporter.stop();
-                // done downloading, safety dispose all connections
+                // safety dispose all connections
                 this.downloadHttpManager.disposeAndReplaceAllClients();
             });
         });
@@ -3445,7 +3443,7 @@ class DownloadHttpClient {
             const backOff = (retryAfterValue) => __awaiter(this, void 0, void 0, function* () {
                 retryCount++;
                 if (retryCount > retryLimit) {
-                    throw new Error(`Unable to download ${artifactLocation}. Retry limit has been reached`);
+                    throw new Error(`Retry limit has been reached. Unable to download ${artifactLocation}`);
                 }
                 else {
                     this.downloadHttpManager.disposeAndReplaceClient(httpClientIndex);
@@ -3478,7 +3476,6 @@ class DownloadHttpClient {
                     yield backOff();
                     continue;
                 }
-                core_1.info('infinite loop inside downloadIndividualFile');
                 if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
                     // The body contains the contents of the file however calling response.readBody() causes all the content to be converted to a string
                     // which can cause some gzip encoded data to be lost
@@ -3496,9 +3493,8 @@ class DownloadHttpClient {
                     // Some unexpected response code, fail immediately and stop the download
                     // eslint-disable-next-line no-console
                     console.log(response);
-                    throw new Error(`###ERROR### Unable to download ${artifactLocation} ###`);
+                    throw new Error(`Unexpected http ${response.message.statusCode} during download for ${artifactLocation}`);
                 }
-                core_1.info('what about now?');
             }
         });
     }
@@ -3513,22 +3509,16 @@ class DownloadHttpClient {
             yield new Promise((resolve, reject) => {
                 if (isGzip) {
                     const gunzip = zlib.createGunzip();
-                    // For testing
-                    reject('some warning, what will happen?');
-                    /*
                     response.message
-                      .pipe(gunzip)
-                      .pipe(destinationStream)
-                      .on('close', () => {
-                        resolve()
-                      })
-                      .on('error', error => {
-                        info(
-                          `An error has been encountered while gunzipping and writing a downloaded file to ${destinationStream.path}`
-                        )
-                        reject(error)
-                      })
-                    */
+                        .pipe(gunzip)
+                        .pipe(destinationStream)
+                        .on('close', () => {
+                        resolve();
+                    })
+                        .on('error', error => {
+                        core_1.info(`An error has been encountered while gunzipping and writing a downloaded file to ${destinationStream.path}`);
+                        reject(error);
+                    });
                 }
                 else {
                     response.message
