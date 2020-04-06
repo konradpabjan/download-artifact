@@ -3410,13 +3410,10 @@ class DownloadHttpClient {
                 }
             }))).catch(error => {
                 throw new Error(`###ERROR### Unable to download the artifact: ${error}`);
-            }).finally(() => {
-                core_1.info('end!');
-                this.statusReporter.stop();
-                // done downloading, safety dispose all connections
-                this.downloadHttpManager.disposeAndReplaceAllClients();
-                return;
             });
+            this.statusReporter.stop();
+            // done downloading, safety dispose all connections
+            this.downloadHttpManager.disposeAndReplaceAllClients();
         });
     }
     /**
