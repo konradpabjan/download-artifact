@@ -1480,7 +1480,7 @@ class UploadHttpClient {
                 }
                 catch (error) {
                     // if an error is caught, it is usually indicative of a timeout so retry the upload
-                    core.warning(`An error has been caught http-client index ${httpClientIndex}, retrying the upload`);
+                    core.info(`An error has been caught http-client index ${httpClientIndex}, retrying the upload`);
                     // eslint-disable-next-line no-console
                     console.log(error);
                     if (incrementAndCheckRetryLimit()) {
@@ -1505,7 +1505,7 @@ class UploadHttpClient {
                         : yield backOff();
                 }
                 else {
-                    core.error(`###ERROR### Unexpected response. Unable to upload chunk to ${resourceUrl}`);
+                    core.error(`Unexpected response. Unable to upload chunk to ${resourceUrl}`);
                     // eslint-disable-next-line no-console
                     console.log(response);
                     return false;
@@ -3413,7 +3413,7 @@ class DownloadHttpClient {
                 }
             })))
                 .catch(error => {
-                throw new Error(`###ERROR### Unable to download the artifact: ${error}`);
+                throw new Error(`Unable to download the artifact: ${error}`);
             })
                 .finally(() => {
                 this.statusReporter.stop();
@@ -3483,7 +3483,6 @@ class DownloadHttpClient {
                     yield backOff();
                     continue;
                 }
-                core.info(response.toString());
                 if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
                     // The body contains the contents of the file however calling response.readBody() causes all the content to be converted to a string
                     // which can cause some gzip encoded data to be lost
