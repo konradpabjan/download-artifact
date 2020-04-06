@@ -3409,7 +3409,7 @@ class DownloadHttpClient {
                     this.statusReporter.incrementProcessedCount();
                 }
             }))).catch(error => {
-                console.error(error.message);
+                throw new Error(`###ERROR### Unable to download the artifact: ${error}`);
             });
             this.statusReporter.stop();
             // done downloading, safety dispose all connections
