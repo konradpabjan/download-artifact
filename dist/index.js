@@ -1232,9 +1232,8 @@ class UploadHttpClient {
                 return JSON.parse(body);
             }
             else {
-                // eslint-disable-next-line no-console
-                console.log(rawResponse);
-                throw new Error(`Unable to create a container for the artifact ${artifactName}`);
+                utils_1.displayHttpDiagnostics(rawResponse);
+                throw new Error(`Unable to create a container for the artifact ${artifactName} at ${artifactUrl}`);
             }
         });
     }
@@ -1446,12 +1445,11 @@ class UploadHttpClient {
             const retryLimit = config_variables_1.getRetryLimit();
             // Increments the current retry count and then checks if the retry limit has been reached
             // If there have been too many retries, fail so the download stops
-            const incrementAndCheckRetryLimit = (message) => {
+            const incrementAndCheckRetryLimit = (response) => {
                 retryCount++;
                 if (retryCount > retryLimit) {
-                    if (message) {
-                        // eslint-disable-next-line no-console
-                        console.log(message);
+                    if (response) {
+                        utils_1.displayHttpDiagnostics(response);
                     }
                     core.info(`Retry limit has been reached for chunk at offset ${start} to ${resourceUrl}`);
                     return true;
@@ -1506,8 +1504,7 @@ class UploadHttpClient {
                 }
                 else {
                     core.error(`Unexpected response. Unable to upload chunk to ${resourceUrl}`);
-                    // eslint-disable-next-line no-console
-                    console.log(response);
+                    utils_1.displayHttpDiagnostics(response);
                     return false;
                 }
             }
@@ -1528,18 +1525,18 @@ class UploadHttpClient {
             core.debug(`URL is ${resourceUrl.toString()}`);
             // use the first client from the httpManager, `keep-alive` is not used so the connection will close immediately
             const client = this.uploadHttpManager.getClient(0);
-            const rawResponse = yield client.patch(resourceUrl.toString(), data, requestOptions);
-            const body = yield rawResponse.readBody();
-            if (utils_1.isSuccessStatusCode(rawResponse.message.statusCode)) {
-                core.debug(`Artifact ${artifactName} has been successfully uploaded, total size ${size}`);
+            const response = yield client.patch(resourceUrl.toString(), data, requestOptions);
+            const body = yield response.readBody();
+            if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
+                core.debug(`Artifact ${artifactName} has been successfully uploaded, total size in bytes: ${size}`);
             }
-            else if (rawResponse.message.statusCode === 404) {
+            else if (response.message.statusCode === 404) {
                 throw new Error(`An Artifact with the name ${artifactName} was not found`);
             }
             else {
-                // eslint-disable-next-line no-console
-                console.log(body);
-                throw new Error(`Unable to finish uploading artifact ${artifactName}`);
+                utils_1.displayHttpDiagnostics(response);
+                core.info(body);
+                throw new Error(`Unable to finish uploading artifact ${artifactName} to ${resourceUrl}`);
             }
         });
     }
@@ -3352,14 +3349,13 @@ class DownloadHttpClient {
             // use the first client from the httpManager, `keep-alive` is not used so the connection will close immediately
             const client = this.downloadHttpManager.getClient(0);
             const requestOptions = utils_1.getDownloadRequestOptions('application/json');
-            const rawResponse = yield client.get(artifactUrl, requestOptions);
-            const body = yield rawResponse.readBody();
-            if (utils_1.isSuccessStatusCode(rawResponse.message.statusCode) && body) {
+            const response = yield client.get(artifactUrl, requestOptions);
+            const body = yield response.readBody();
+            if (utils_1.isSuccessStatusCode(response.message.statusCode) && body) {
                 return JSON.parse(body);
             }
-            // eslint-disable-next-line no-console
-            console.log(rawResponse);
-            throw new Error(`Unable to list artifacts for the run`);
+            utils_1.displayHttpDiagnostics(response);
+            throw new Error(`Unable to list artifacts for the run. Resource Url ${artifactUrl}`);
         });
     }
     /**
@@ -3375,13 +3371,12 @@ class DownloadHttpClient {
             // use the first client from the httpManager, `keep-alive` is not used so the connection will close immediately
             const client = this.downloadHttpManager.getClient(0);
             const requestOptions = utils_1.getDownloadRequestOptions('application/json');
-            const rawResponse = yield client.get(resourceUrl.toString(), requestOptions);
-            const body = yield rawResponse.readBody();
-            if (utils_1.isSuccessStatusCode(rawResponse.message.statusCode) && body) {
+            const response = yield client.get(resourceUrl.toString(), requestOptions);
+            const body = yield response.readBody();
+            if (utils_1.isSuccessStatusCode(response.message.statusCode) && body) {
                 return JSON.parse(body);
             }
-            // eslint-disable-next-line no-console
-            console.log(rawResponse);
+            utils_1.displayHttpDiagnostics(response);
             throw new Error(`Unable to get ContainersItems from ${resourceUrl}`);
         });
     }
@@ -3478,12 +3473,10 @@ class DownloadHttpClient {
                     core.info('An error has been caught, while attempting to download a file');
                     // eslint-disable-next-line no-console
                     console.log(error);
-                    error();
                     // increment the retryCount and use exponential backoff to wait before making the next request
                     yield backOff();
                     continue;
                 }
-                utils_1.displayHttpDiagnostics(response, artifactLocation);
                 if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
                     // The body contains the contents of the file however calling response.readBody() causes all the content to be converted to a string
                     // which can cause some gzip encoded data to be lost
@@ -3499,6 +3492,7 @@ class DownloadHttpClient {
                 }
                 else {
                     // Some unexpected response code, fail immediately and stop the download
+                    utils_1.displayHttpDiagnostics(response);
                     return Promise.reject(new Error(`Unexpected http ${response.message.statusCode} during download for ${artifactLocation}`));
                 }
             }
@@ -5100,15 +5094,12 @@ exports.getArtifactUrl = getArtifactUrl;
  * Certain information such as the TLSSocket and the Readable state are not really useful for diagnostic purposes so they can be avoided.
  * Other information such as the headers, the response code and message might be useful, so this is displayed.
  */
-function displayHttpDiagnostics(response, url) {
-    core_1.info(`##### Begin Diagnostic IHttpClientResponse information #####
+function displayHttpDiagnostics(response) {
+    core_1.info(`##### Begin Diagnostic HTTP information #####
 Status Code: ${response.message.statusCode}
 Status Message: ${response.message.statusMessage}
-Request Url: ${url}
-
 Header Information: ${JSON.stringify(response.message.headers, undefined, 2)}
-
-###### End Diagnostic IHttpClientResponse information ######`);
+###### End Diagnostic HTTP information ######`);
 }
 exports.displayHttpDiagnostics = displayHttpDiagnostics;
 /**
@@ -7254,7 +7245,7 @@ class StatusReporter {
         this.totalNumberOfFilesToProcess = fileTotal;
     }
     start() {
-        // displays information about the total upload/download status every 5 seconds
+        // displays information about the total upload/download status
         this.totalFileStatus = setInterval(() => {
             // display 1 decimal place without any rounding
             const percentage = this.formatPercentage(this.processedCount, this.totalNumberOfFilesToProcess);
