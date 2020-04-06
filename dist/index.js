@@ -1193,6 +1193,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const fs = __importStar(__webpack_require__(747));
+const core = __importStar(__webpack_require__(211));
 const tmp = __importStar(__webpack_require__(466));
 const stream = __importStar(__webpack_require__(413));
 const utils_1 = __webpack_require__(844);
@@ -1201,7 +1202,6 @@ const util_1 = __webpack_require__(669);
 const url_1 = __webpack_require__(835);
 const perf_hooks_1 = __webpack_require__(630);
 const status_reporter_1 = __webpack_require__(974);
-const core_1 = __webpack_require__(211);
 const http_manager_1 = __webpack_require__(114);
 const upload_gzip_1 = __webpack_require__(636);
 const stat = util_1.promisify(fs.stat);
@@ -1248,7 +1248,7 @@ class UploadHttpClient {
         return __awaiter(this, void 0, void 0, function* () {
             const FILE_CONCURRENCY = config_variables_1.getUploadFileConcurrency();
             const MAX_CHUNK_SIZE = config_variables_1.getUploadChunkSize();
-            core_1.debug(`File Concurrency: ${FILE_CONCURRENCY}, and Chunk Size: ${MAX_CHUNK_SIZE}`);
+            core.debug(`File Concurrency: ${FILE_CONCURRENCY}, and Chunk Size: ${MAX_CHUNK_SIZE}`);
             const parameters = [];
             // by default, file uploads will continue if there is an error unless specified differently in the options
             let continueOnError = true;
@@ -1288,14 +1288,16 @@ class UploadHttpClient {
                     }
                     const startTime = perf_hooks_1.performance.now();
                     const uploadFileResult = yield this.uploadFileAsync(index, currentFileParameters);
-                    core_1.debug(`File: ${++completedFiles}/${filesToUpload.length}. ${currentFileParameters.file} took ${(perf_hooks_1.performance.now() - startTime).toFixed(3)} milliseconds to finish upload`);
+                    if (core.isDebug()) {
+                        core.debug(`File: ${++completedFiles}/${filesToUpload.length}. ${currentFileParameters.file} took ${(perf_hooks_1.performance.now() - startTime).toFixed(3)} milliseconds to finish upload`);
+                    }
                     uploadFileSize += uploadFileResult.successfulUploadSize;
                     totalFileSize += uploadFileResult.totalSize;
                     if (uploadFileResult.isSuccess === false) {
                         failedItemsToReport.push(currentFileParameters.file);
                         if (!continueOnError) {
                             // fail fast
-                            core_1.info(`aborting artifact upload`);
+                            core.error(`aborting artifact upload`);
                             abortPendingFileUploads = true;
                         }
                     }
@@ -1305,7 +1307,7 @@ class UploadHttpClient {
             this.statusReporter.stop();
             // done uploading, safety dispose all connections
             this.uploadHttpManager.disposeAndReplaceAllClients();
-            core_1.info(`Total size of all the files uploaded is ${uploadFileSize} bytes`);
+            core.info(`Total size of all the files uploaded is ${uploadFileSize} bytes`);
             return {
                 uploadSize: uploadFileSize,
                 totalSize: totalFileSize,
@@ -1351,7 +1353,7 @@ class UploadHttpClient {
                     // chunk failed to upload
                     isUploadSuccessful = false;
                     failedChunkSizes += uploadFileSize;
-                    core_1.warning(`Aborting upload for ${parameters.file} due to failure`);
+                    core.warning(`Aborting upload for ${parameters.file} due to failure`);
                 }
                 return {
                     isSuccess: isUploadSuccessful,
@@ -1401,7 +1403,7 @@ class UploadHttpClient {
                             // successfully uploaded so the server may report a different size for what was uploaded
                             isUploadSuccessful = false;
                             failedChunkSizes += chunkSize;
-                            core_1.warning(`Aborting upload for ${parameters.file} due to failure`);
+                            core.warning(`Aborting upload for ${parameters.file} due to failure`);
                             abortFileUpload = true;
                         }
                     }
@@ -1451,7 +1453,7 @@ class UploadHttpClient {
                         // eslint-disable-next-line no-console
                         console.log(message);
                     }
-                    core_1.info(`Retry limit has been reached for chunk at offset ${start} to ${resourceUrl}`);
+                    core.info(`Retry limit has been reached for chunk at offset ${start} to ${resourceUrl}`);
                     return true;
                 }
                 return false;
@@ -1459,15 +1461,15 @@ class UploadHttpClient {
             const backOff = (retryAfterValue) => __awaiter(this, void 0, void 0, function* () {
                 this.uploadHttpManager.disposeAndReplaceClient(httpClientIndex);
                 if (retryAfterValue) {
-                    core_1.info(`Backoff due to too many requests, retry #${retryCount}. Waiting for ${retryAfterValue} milliseconds before continuing the upload`);
+                    core.info(`Backoff due to too many requests, retry #${retryCount}. Waiting for ${retryAfterValue} milliseconds before continuing the upload`);
                     yield new Promise(resolve => setTimeout(resolve, retryAfterValue));
                 }
                 else {
                     const backoffTime = utils_1.getExponentialRetryTimeInMilliseconds(retryCount);
-                    core_1.info(`Exponential backoff for retry #${retryCount}. Waiting for ${backoffTime} milliseconds before continuing the upload at offset ${start}`);
+                    core.info(`Exponential backoff for retry #${retryCount}. Waiting for ${backoffTime} milliseconds before continuing the upload at offset ${start}`);
                     yield new Promise(resolve => setTimeout(resolve, backoffTime));
                 }
-                core_1.info(`Finished backoff for retry #${retryCount}, continuing with upload`);
+                core.info(`Finished backoff for retry #${retryCount}, continuing with upload`);
                 return;
             });
             // allow for failed chunks to be retried multiple times
@@ -1478,7 +1480,7 @@ class UploadHttpClient {
                 }
                 catch (error) {
                     // if an error is caught, it is usually indicative of a timeout so retry the upload
-                    core_1.info(`An error has been caught http-client index ${httpClientIndex}, retrying the upload`);
+                    core.warning(`An error has been caught http-client index ${httpClientIndex}, retrying the upload`);
                     // eslint-disable-next-line no-console
                     console.log(error);
                     if (incrementAndCheckRetryLimit()) {
@@ -1494,7 +1496,7 @@ class UploadHttpClient {
                     return true;
                 }
                 else if (utils_1.isRetryableStatusCode(response.message.statusCode)) {
-                    core_1.info(`A ${response.message.statusCode} status code has been received, will attempt to retry the upload`);
+                    core.info(`A ${response.message.statusCode} status code has been received, will attempt to retry the upload`);
                     if (incrementAndCheckRetryLimit(response)) {
                         return false;
                     }
@@ -1503,7 +1505,7 @@ class UploadHttpClient {
                         : yield backOff();
                 }
                 else {
-                    core_1.info(`###ERROR### Unexpected response. Unable to upload chunk to ${resourceUrl}`);
+                    core.error(`###ERROR### Unexpected response. Unable to upload chunk to ${resourceUrl}`);
                     // eslint-disable-next-line no-console
                     console.log(response);
                     return false;
@@ -1523,13 +1525,13 @@ class UploadHttpClient {
             resourceUrl.searchParams.append('artifactName', artifactName);
             const parameters = { Size: size };
             const data = JSON.stringify(parameters, null, 2);
-            core_1.debug(`URL is ${resourceUrl.toString()}`);
+            core.debug(`URL is ${resourceUrl.toString()}`);
             // use the first client from the httpManager, `keep-alive` is not used so the connection will close immediately
             const client = this.uploadHttpManager.getClient(0);
             const rawResponse = yield client.patch(resourceUrl.toString(), data, requestOptions);
             const body = yield rawResponse.readBody();
             if (utils_1.isSuccessStatusCode(rawResponse.message.statusCode)) {
-                core_1.debug(`Artifact ${artifactName} has been successfully uploaded, total size ${size}`);
+                core.debug(`Artifact ${artifactName} has been successfully uploaded, total size ${size}`);
             }
             else if (rawResponse.message.statusCode === 404) {
                 throw new Error(`An Artifact with the name ${artifactName} was not found`);
@@ -3327,6 +3329,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const fs = __importStar(__webpack_require__(747));
+const core = __importStar(__webpack_require__(211));
 const zlib = __importStar(__webpack_require__(761));
 const utils_1 = __webpack_require__(844);
 const url_1 = __webpack_require__(835);
@@ -3334,7 +3337,6 @@ const status_reporter_1 = __webpack_require__(974);
 const perf_hooks_1 = __webpack_require__(630);
 const http_manager_1 = __webpack_require__(114);
 const config_variables_1 = __webpack_require__(706);
-const core_1 = __webpack_require__(211);
 class DownloadHttpClient {
     constructor() {
         this.downloadHttpManager = new http_manager_1.HttpManager(config_variables_1.getDownloadFileConcurrency());
@@ -3391,11 +3393,11 @@ class DownloadHttpClient {
         return __awaiter(this, void 0, void 0, function* () {
             const DOWNLOAD_CONCURRENCY = config_variables_1.getDownloadFileConcurrency();
             // limit the number of files downloaded at a single time
-            core_1.debug(`Download file concurrency is set to ${DOWNLOAD_CONCURRENCY}`);
+            core.debug(`Download file concurrency is set to ${DOWNLOAD_CONCURRENCY}`);
             const parallelDownloads = [...new Array(DOWNLOAD_CONCURRENCY).keys()];
             let currentFile = 0;
             let downloadedFiles = 0;
-            core_1.info(`Total number of files that will be downloaded: ${downloadItems.length}`);
+            core.info(`Total number of files that will be downloaded: ${downloadItems.length}`);
             this.statusReporter.setTotalNumberOfFilesToProcess(downloadItems.length);
             this.statusReporter.start();
             yield Promise.all(parallelDownloads.map((index) => __awaiter(this, void 0, void 0, function* () {
@@ -3404,12 +3406,16 @@ class DownloadHttpClient {
                     currentFile += 1;
                     const startTime = perf_hooks_1.performance.now();
                     yield this.downloadIndividualFile(index, currentFileToDownload.sourceLocation, currentFileToDownload.targetPath);
-                    core_1.debug(`File: ${++downloadedFiles}/${downloadItems.length}. ${currentFileToDownload.targetPath} took ${(perf_hooks_1.performance.now() - startTime).toFixed(3)} milliseconds to finish downloading`);
+                    if (core.isDebug()) {
+                        core.debug(`File: ${++downloadedFiles}/${downloadItems.length}. ${currentFileToDownload.targetPath} took ${(perf_hooks_1.performance.now() - startTime).toFixed(3)} milliseconds to finish downloading`);
+                    }
                     this.statusReporter.incrementProcessedCount();
                 }
-            }))).catch(error => {
+            })))
+                .catch(error => {
                 throw new Error(`###ERROR### Unable to download the artifact: ${error}`);
-            }).finally(() => {
+            })
+                .finally(() => {
                 this.statusReporter.stop();
                 // safety dispose all connections
                 this.downloadHttpManager.disposeAndReplaceAllClients();
@@ -3443,22 +3449,22 @@ class DownloadHttpClient {
             const backOff = (retryAfterValue) => __awaiter(this, void 0, void 0, function* () {
                 retryCount++;
                 if (retryCount > retryLimit) {
-                    throw new Error(`Retry limit has been reached. Unable to download ${artifactLocation}`);
+                    return Promise.reject(new Error(`Retry limit has been reached. Unable to download ${artifactLocation}`));
                 }
                 else {
                     this.downloadHttpManager.disposeAndReplaceClient(httpClientIndex);
                     if (retryAfterValue) {
                         // Back off exponentially based off of the retry count
-                        core_1.info(`Backoff due to too many requests, retry #${retryCount}. Waiting for ${retryAfterValue} milliseconds before continuing the download`);
+                        core.info(`Backoff due to too many requests, retry #${retryCount}. Waiting for ${retryAfterValue} milliseconds before continuing the download`);
                         yield new Promise(resolve => setTimeout(resolve, retryAfterValue));
                     }
                     else {
                         // Back off using an exponential value that depends on the retry count
                         const backoffTime = utils_1.getExponentialRetryTimeInMilliseconds(retryCount);
-                        core_1.info(`Exponential backoff for retry #${retryCount}. Waiting for ${backoffTime} milliseconds before continuing the download`);
+                        core.info(`Exponential backoff for retry #${retryCount}. Waiting for ${backoffTime} milliseconds before continuing the download`);
                         yield new Promise(resolve => setTimeout(resolve, backoffTime));
                     }
-                    core_1.info(`Finished backoff for retry #${retryCount}, continuing with download`);
+                    core.info(`Finished backoff for retry #${retryCount}, continuing with download`);
                 }
             });
             // keep trying to download a file until a retry limit has been reached
@@ -3469,13 +3475,15 @@ class DownloadHttpClient {
                 }
                 catch (error) {
                     // if an error is caught, it is usually indicative of a timeout so retry the download
-                    core_1.info('An error has been caught, while attempting to download a file');
+                    core.info('An error has been caught, while attempting to download a file');
                     // eslint-disable-next-line no-console
                     console.log(error);
+                    error();
                     // increment the retryCount and use exponential backoff to wait before making the next request
                     yield backOff();
                     continue;
                 }
+                core.info(response.toString());
                 if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
                     // The body contains the contents of the file however calling response.readBody() causes all the content to be converted to a string
                     // which can cause some gzip encoded data to be lost
@@ -3483,7 +3491,7 @@ class DownloadHttpClient {
                     return this.pipeResponseToFile(response, destinationStream, isGzip(response.message.headers));
                 }
                 else if (utils_1.isRetryableStatusCode(response.message.statusCode)) {
-                    core_1.info(`A ${response.message.statusCode} response code has been received while attempting to download an artifact`);
+                    core.info(`A ${response.message.statusCode} response code has been received while attempting to download an artifact`);
                     // if a throttled status code is received, try to get the retryAfter header value, else differ to standard exponential backoff
                     utils_1.isThrottledStatusCode(response.message.statusCode)
                         ? yield backOff(utils_1.tryGetRetryAfterValueTimeInMilliseconds(response.message.headers))
@@ -3491,9 +3499,7 @@ class DownloadHttpClient {
                 }
                 else {
                     // Some unexpected response code, fail immediately and stop the download
-                    // eslint-disable-next-line no-console
-                    console.log(response);
-                    throw new Error(`Unexpected http ${response.message.statusCode} during download for ${artifactLocation}`);
+                    return Promise.reject(new Error(`Unexpected http ${response.message.statusCode} during download for ${artifactLocation}`));
                 }
             }
         });
@@ -3516,7 +3522,7 @@ class DownloadHttpClient {
                         resolve();
                     })
                         .on('error', error => {
-                        core_1.info(`An error has been encountered while gunzipping and writing a downloaded file to ${destinationStream.path}`);
+                        core.error(`An error has been encountered while gunzipping and writing a downloaded file to ${destinationStream.path}`);
                         reject(error);
                     });
                 }
@@ -3527,7 +3533,7 @@ class DownloadHttpClient {
                         resolve();
                     })
                         .on('error', error => {
-                        core_1.info(`An error has been encountered while writing a downloaded file to ${destinationStream.path}`);
+                        core.error(`An error has been encountered while writing a downloaded file to ${destinationStream.path}`);
                         reject(error);
                     });
                 }
@@ -4558,26 +4564,34 @@ var Inputs;
 "use strict";
 
 Object.defineProperty(exports, "__esModule", { value: true });
+// The number of concurrent uploads that happens at the same time
 function getUploadFileConcurrency() {
     return 2;
 }
 exports.getUploadFileConcurrency = getUploadFileConcurrency;
+// When uploading large files that can't be uploaded with a single http call, this controls
+// the chunk size that is used during upload
 function getUploadChunkSize() {
     return 4 * 1024 * 1024; // 4 MB Chunks
 }
 exports.getUploadChunkSize = getUploadChunkSize;
+// The maximum number of retries that can be attempted before an upload or download fails
 function getRetryLimit() {
     return 5;
 }
 exports.getRetryLimit = getRetryLimit;
+// With exponential backoff, the larger the retry count, the larger the wait time before another attempt
+// The retry multiplier controls by how much the backOff time increases depending on the number of retries
 function getRetryMultiplier() {
     return 1.5;
 }
 exports.getRetryMultiplier = getRetryMultiplier;
+// The initial wait time if an upload or download fails and a retry is being attempted for the first time
 function getInitialRetryIntervalInMilliseconds() {
     return 3000;
 }
 exports.getInitialRetryIntervalInMilliseconds = getInitialRetryIntervalInMilliseconds;
+// The number of concurrent downloads that happens at the same time
 function getDownloadFileConcurrency() {
     return 2;
 }
