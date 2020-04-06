@@ -5101,13 +5101,12 @@ exports.getArtifactUrl = getArtifactUrl;
  * Other information such as the headers, rawHeaders, response Code. method and Path might prove useful, so this is displayed.
  */
 function displayHttpDiagnostics(response) {
-    core_1.info(`Diagnostic information for the IHttpClientResponse
-     HTTP Method: ${response.message.method}
-     Status Code: ${response.message.statusCode}
-     Status Message: ${response.message.statusMessage}
-     Raw Header Information: ${JSON.stringify(response.message.rawHeaders, undefined, 2)}
-     Header Information: ${JSON.stringify(response.message.headers, undefined, 2)}
-     `);
+    core_1.info(`##### Diagnostic IHttpClientResponse information #####
+Status Code: ${response.message.statusCode}
+Status Message: ${response.message.statusMessage}
+Url: ${response.message.url}
+Raw Header Information: ${JSON.stringify(response.message.rawHeaders, undefined, 2)}
+Header Information: ${JSON.stringify(response.message.headers, undefined, 2)}`);
 }
 exports.displayHttpDiagnostics = displayHttpDiagnostics;
 /**
