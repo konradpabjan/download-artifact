@@ -1231,6 +1231,11 @@ class UploadHttpClient {
             if (utils_1.isSuccessStatusCode(rawResponse.message.statusCode) && body) {
                 return JSON.parse(body);
             }
+            else if (utils_1.isForbiddenStatusCode(rawResponse.message.statusCode)) {
+                // if a 403 is returned when trying to create a file container, the customer has exceeded
+                // their storage quota so no new artifact containers can be created
+                throw new Error(`Artifact storage quota has been hit. Unable to upload any new artifacts`);
+            }
             else {
                 utils_1.displayHttpDiagnostics(rawResponse);
                 throw new Error(`Unable to create a container for the artifact ${artifactName} at ${artifactUrl}`);
@@ -2024,6 +2029,7 @@ class DefaultArtifactClient {
                 // Create all necessary directories recursively before starting any download
                 yield utils_1.createDirectoriesForArtifact(downloadSpecification.directoryStructure);
                 core.info('Directory structure has been setup for the artifact');
+                yield utils_1.createEmptyFilesForArtifact(downloadSpecification.emptyFilesToCreate);
                 yield downloadHttpClient.downloadSingleArtifact(downloadSpecification.filesToDownload);
             }
             return {
@@ -2058,6 +2064,7 @@ class DefaultArtifactClient {
                 }
                 else {
                     yield utils_1.createDirectoriesForArtifact(downloadSpecification.directoryStructure);
+                    yield utils_1.createEmptyFilesForArtifact(downloadSpecification.emptyFilesToCreate);
                     yield downloadHttpClient.downloadSingleArtifact(downloadSpecification.filesToDownload);
                 }
                 response.push({
@@ -3449,7 +3456,7 @@ class DownloadHttpClient {
                 else {
                     this.downloadHttpManager.disposeAndReplaceClient(httpClientIndex);
                     if (retryAfterValue) {
-                        // Back off exponentially based off of the retry count
+                        // Back off by waiting the specified time denoted by the retry-after header
                         core.info(`Backoff due to too many requests, retry #${retryCount}. Waiting for ${retryAfterValue} milliseconds before continuing the download`);
                         yield new Promise(resolve => setTimeout(resolve, retryAfterValue));
                     }
@@ -3470,14 +3477,13 @@ class DownloadHttpClient {
                 }
                 catch (error) {
                     // if an error is caught, it is usually indicative of a timeout so retry the download
-                    core.info('An error has been caught, while attempting to download a file');
+                    core.info('An error occurred while attempting to download a file');
                     // eslint-disable-next-line no-console
                     console.log(error);
                     // increment the retryCount and use exponential backoff to wait before making the next request
                     yield backOff();
                     continue;
                 }
-                utils_1.displayHttpDiagnostics(response);
                 if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
                     // The body contains the contents of the file however calling response.readBody() causes all the content to be converted to a string
                     // which can cause some gzip encoded data to be lost
@@ -3517,7 +3523,7 @@ class DownloadHttpClient {
                         resolve();
                     })
                         .on('error', error => {
-                        core.error(`An error has been encountered while gunzipping and writing a downloaded file to ${destinationStream.path}`);
+                        core.error(`An error has been encountered while decompressing and writing a downloaded file to ${destinationStream.path}`);
                         reject(error);
                     });
                 }
@@ -4649,12 +4655,14 @@ const path = __importStar(__webpack_require__(622));
  * @param includeRootDirectory specifies if there should be an extra directory (denoted by the artifact name) where the artifact files should be downloaded to
  */
 function getDownloadSpecification(artifactName, artifactEntries, downloadPath, includeRootDirectory) {
+    // use a set for the directory paths so that there are no duplicates
     const directories = new Set();
     const specifications = {
         rootDownloadLocation: includeRootDirectory
             ? path.join(downloadPath, artifactName)
             : downloadPath,
         directoryStructure: [],
+        emptyFilesToCreate: [],
         filesToDownload: []
     };
     for (const entry of artifactEntries) {
@@ -4672,10 +4680,16 @@ function getDownloadSpecification(artifactName, artifactEntries, downloadPath, i
             if (entry.itemType === 'file') {
                 // Get the directories that we need to create from the filePath for each individual file
                 directories.add(path.dirname(filePath));
-                specifications.filesToDownload.push({
-                    sourceLocation: entry.contentLocation,
-                    targetPath: filePath
-                });
+                if (entry.fileLength === 0) {
+                    // An empty file was uploaded, create the empty files locally so that no extra http calls are made
+                    specifications.emptyFilesToCreate.push(filePath);
+                }
+                else {
+                    specifications.filesToDownload.push({
+                        sourceLocation: entry.contentLocation,
+                        targetPath: filePath
+                    });
+                }
             }
         }
     }
@@ -4961,6 +4975,13 @@ function isSuccessStatusCode(statusCode) {
     return statusCode >= 200 && statusCode < 300;
 }
 exports.isSuccessStatusCode = isSuccessStatusCode;
+function isForbiddenStatusCode(statusCode) {
+    if (!statusCode) {
+        return false;
+    }
+    return statusCode === http_client_1.HttpCodes.Forbidden;
+}
+exports.isForbiddenStatusCode = isForbiddenStatusCode;
 function isRetryableStatusCode(statusCode) {
     if (!statusCode) {
         return false;
@@ -4990,13 +5011,13 @@ function tryGetRetryAfterValueTimeInMilliseconds(headers) {
     if (headers['retry-after']) {
         const retryTime = Number(headers['retry-after']);
         if (!isNaN(retryTime)) {
-            core_1.info(`retry-after headers is present with a value of ${retryTime}`);
+            core_1.info(`Retry-After header is present with a value of ${retryTime}`);
             return retryTime * 1000;
         }
-        core_1.info(`returned retry-after header value: ${retryTime} is non-numeric and cannot be used`);
+        core_1.info(`Returned retry-after header value: ${retryTime} is non-numeric and cannot be used`);
         return undefined;
     }
-    core_1.info(`no retry-after header was found. Dumping all headers for diagnostic purposes`);
+    core_1.info(`No retry-after header was found. Dumping all headers for diagnostic purposes`);
     // eslint-disable-next-line no-console
     console.log(headers);
     return undefined;
@@ -5164,6 +5185,14 @@ function createDirectoriesForArtifact(directories) {
     });
 }
 exports.createDirectoriesForArtifact = createDirectoriesForArtifact;
+function createEmptyFilesForArtifact(emptyFilesToCreate) {
+    return __awaiter(this, void 0, void 0, function* () {
+        for (const filePath of emptyFilesToCreate) {
+            yield (yield fs_1.promises.open(filePath, 'w')).close();
+        }
+    });
+}
+exports.createEmptyFilesForArtifact = createEmptyFilesForArtifact;
 //# sourceMappingURL=utils.js.map
 
 /***/ }),
@@ -7258,7 +7287,7 @@ class StatusReporter {
                 core_1.info(value);
             }
             // delete all entires in the map after displaying the information so it will not be displayed again unless explicitly added
-            this.largeFiles = new Map();
+            this.largeFiles.clear();
         }, 1000);
     }
     // if there is a large file that is being uploaded in chunks, this is used to display extra information about the status of the upload
