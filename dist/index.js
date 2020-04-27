@@ -1140,6 +1140,7 @@ function regExpEscape (s) {
 
 Object.defineProperty(exports, "__esModule", { value: true });
 const utils_1 = __webpack_require__(844);
+const core_1 = __webpack_require__(211);
 /**
  * Used for managing http clients during either upload or download
  */
@@ -1154,8 +1155,10 @@ class HttpManager {
         return this.clients[index];
     }
     // client disposal is necessary if a keep-alive connection is used to properly close the connection
+    // this should be called if a connection gets reset, timeouts or gets dropped for some unexpected reason and we would like to retry
     // for more information see: https://github.com/actions/http-client/blob/04e5ad73cd3fd1f5610a32116b0759eddf6570d2/index.ts#L292
     disposeAndReplaceClient(index) {
+        core_1.info(`disposing and replacing http client ${index}`);
         this.clients[index].dispose();
         this.clients[index] = utils_1.createHttpClient();
     }
@@ -1312,8 +1315,6 @@ class UploadHttpClient {
                 }
             })));
             this.statusReporter.stop();
-            // done uploading, safety dispose all keep-alive connections
-            this.uploadHttpManager.disposeAllClients();
             core.info(`Total size of all the files uploaded is ${uploadFileSize} bytes`);
             return {
                 uploadSize: uploadFileSize,
@@ -1529,6 +1530,8 @@ class UploadHttpClient {
             const client = this.uploadHttpManager.getClient(0);
             const response = yield client.patch(resourceUrl.toString(), data, headers);
             const body = yield response.readBody();
+            // safety dispose all connections since we won't be making any more http calls as part of the upload
+            this.uploadHttpManager.disposeAllClients();
             if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
                 core.debug(`Artifact ${artifactName} has been successfully uploaded, total size in bytes: ${size}`);
             }
