@@ -1213,6 +1213,10 @@ class UploadHttpClient {
         this.uploadHttpManager = new http_manager_1.HttpManager(config_variables_1.getUploadFileConcurrency());
         this.statusReporter = new status_reporter_1.StatusReporter(10000);
     }
+    disposeAllConnections() {
+        // safety dispose all connections when we are done making all http calls
+        this.uploadHttpManager.disposeAllClients();
+    }
     /**
      * Creates a file container for the new artifact in the remote blob storage/file service
      * @param {string} artifactName Name of the artifact being created
@@ -1238,12 +1242,12 @@ class UploadHttpClient {
             else if (utils_1.isForbiddenStatusCode(rawResponse.message.statusCode)) {
                 // if a 403 is returned when trying to create a file container, the customer has exceeded
                 // their storage quota so no new artifact containers can be created
-                this.uploadHttpManager.disposeAllClients();
+                this.disposeAllConnections();
                 throw new Error(`Artifact storage quota has been hit. Unable to upload any new artifacts`);
             }
             else {
                 utils_1.displayHttpDiagnostics(rawResponse);
-                this.uploadHttpManager.disposeAllClients();
+                this.disposeAllConnections();
                 throw new Error(`Unable to create a container for the artifact ${artifactName} at ${artifactUrl}`);
             }
         });
@@ -1531,7 +1535,7 @@ class UploadHttpClient {
             const response = yield client.patch(resourceUrl.toString(), data, headers);
             const body = yield response.readBody();
             // safety dispose all connections since we won't be making any more http calls as part of the upload
-            this.uploadHttpManager.disposeAllClients();
+            this.disposeAllConnections();
             if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
                 core.debug(`Artifact ${artifactName} has been successfully uploaded, total size in bytes: ${size}`);
             }
@@ -2031,6 +2035,7 @@ class DefaultArtifactClient {
                 core.info('Directory structure has been setup for the artifact');
                 yield utils_1.createEmptyFilesForArtifact(downloadSpecification.emptyFilesToCreate);
                 yield downloadHttpClient.downloadSingleArtifact(downloadSpecification.filesToDownload);
+                downloadHttpClient.disposeAllConnections();
             }
             return {
                 artifactName: name,
@@ -2072,6 +2077,7 @@ class DefaultArtifactClient {
                     downloadPath: downloadSpecification.rootDownloadLocation
                 });
             }
+            downloadHttpClient.disposeAllConnections();
             return response;
         });
     }
@@ -3347,6 +3353,10 @@ class DownloadHttpClient {
         // downloads are usually significantly faster than uploads so display status information every second
         this.statusReporter = new status_reporter_1.StatusReporter(1000);
     }
+    disposeAllConnections() {
+        // safety dispose all connections when we are done making all http calls
+        this.downloadHttpManager.disposeAllClients();
+    }
     /**
      * Gets a list of all artifacts that are in a specific container
      */
@@ -3361,7 +3371,7 @@ class DownloadHttpClient {
                 return JSON.parse(body);
             }
             utils_1.displayHttpDiagnostics(response);
-            this.downloadHttpManager.disposeAllClients();
+            this.disposeAllConnections();
             throw new Error(`Unable to list artifacts for the run. Resource Url ${artifactUrl}`);
         });
     }
@@ -3383,7 +3393,7 @@ class DownloadHttpClient {
                 return JSON.parse(body);
             }
             utils_1.displayHttpDiagnostics(response);
-            this.downloadHttpManager.disposeAllClients();
+            this.disposeAllConnections();
             throw new Error(`Unable to get ContainersItems from ${resourceUrl}`);
         });
     }
@@ -3419,8 +3429,6 @@ class DownloadHttpClient {
             })
                 .finally(() => {
                 this.statusReporter.stop();
-                // safety dispose all connections
-                this.downloadHttpManager.disposeAllClients();
             });
         });
     }
