@@ -1159,9 +1159,9 @@ class HttpManager {
         this.clients[index].dispose();
         this.clients[index] = utils_1.createHttpClient();
     }
-    disposeAndReplaceAllClients() {
+    disposeAllClients() {
         for (const [index] of this.clients.entries()) {
-            this.disposeAndReplaceClient(index);
+            this.clients[index].dispose();
         }
     }
 }
@@ -1223,10 +1223,11 @@ class UploadHttpClient {
             };
             const data = JSON.stringify(parameters, null, 2);
             const artifactUrl = utils_1.getArtifactUrl();
-            // use the first client from the httpManager, `keep-alive` is not used so the connection will close immediately
+            // use the first client from the httpManager, `keep-alive` is used because the same http client will be
+            // used shortly afterwards to start uploading files individually so there is no point in closing the connection
             const client = this.uploadHttpManager.getClient(0);
-            const requestOptions = utils_1.getUploadRequestOptions('application/json', false);
-            const rawResponse = yield client.post(artifactUrl, data, requestOptions);
+            const headers = utils_1.getUploadHeaders('application/json', true);
+            const rawResponse = yield client.post(artifactUrl, data, headers);
             const body = yield rawResponse.readBody();
             if (utils_1.isSuccessStatusCode(rawResponse.message.statusCode) && body) {
                 return JSON.parse(body);
@@ -1234,10 +1235,12 @@ class UploadHttpClient {
             else if (utils_1.isForbiddenStatusCode(rawResponse.message.statusCode)) {
                 // if a 403 is returned when trying to create a file container, the customer has exceeded
                 // their storage quota so no new artifact containers can be created
+                this.uploadHttpManager.disposeAllClients();
                 throw new Error(`Artifact storage quota has been hit. Unable to upload any new artifacts`);
             }
             else {
                 utils_1.displayHttpDiagnostics(rawResponse);
+                this.uploadHttpManager.disposeAllClients();
                 throw new Error(`Unable to create a container for the artifact ${artifactName} at ${artifactUrl}`);
             }
         });
@@ -1309,8 +1312,8 @@ class UploadHttpClient {
                 }
             })));
             this.statusReporter.stop();
-            // done uploading, safety dispose all connections
-            this.uploadHttpManager.disposeAndReplaceAllClients();
+            // done uploading, safety dispose all keep-alive connections
+            this.uploadHttpManager.disposeAllClients();
             core.info(`Total size of all the files uploaded is ${uploadFileSize} bytes`);
             return {
                 uploadSize: uploadFileSize,
@@ -1367,61 +1370,55 @@ class UploadHttpClient {
             }
             else {
                 // the file that is being uploaded is greater than 64k in size, a temporary file gets created on disk using the
-                // npm tmp-promise package and this file gets used during compression for the GZip file that gets created
-                return tmp
-                    .file()
-                    .then((tmpFile) => __awaiter(this, void 0, void 0, function* () {
-                    // create a GZip file of the original file being uploaded, the original file should not be modified in any way
-                    uploadFileSize = yield upload_gzip_1.createGZipFileOnDisk(parameters.file, tmpFile.path);
-                    let uploadFilePath = tmpFile.path;
-                    // compression did not help with size reduction, use the original file for upload and delete the temp GZip file
-                    if (totalFileSize < uploadFileSize) {
-                        uploadFileSize = totalFileSize;
-                        uploadFilePath = parameters.file;
-                        isGzip = false;
-                        tmpFile.cleanup();
+                // npm tmp-promise package and this file gets used to create a GZipped file
+                const tempFile = yield tmp.file();
+                // create a GZip file of the original file being uploaded, the original file should not be modified in any way
+                uploadFileSize = yield upload_gzip_1.createGZipFileOnDisk(parameters.file, tempFile.path);
+                let uploadFilePath = tempFile.path;
+                // compression did not help with size reduction, use the original file for upload and delete the temp GZip file
+                if (totalFileSize < uploadFileSize) {
+                    uploadFileSize = totalFileSize;
+                    uploadFilePath = parameters.file;
+                    isGzip = false;
+                }
+                let abortFileUpload = false;
+                // upload only a single chunk at a time
+                while (offset < uploadFileSize) {
+                    const chunkSize = Math.min(uploadFileSize - offset, parameters.maxChunkSize);
+                    // if an individual file is greater than 100MB (1024*1024*100) in size, display extra information about the upload status
+                    if (uploadFileSize > 104857600) {
+                        this.statusReporter.updateLargeFileStatus(parameters.file, offset, uploadFileSize);
                     }
-                    let abortFileUpload = false;
-                    // upload only a single chunk at a time
-                    while (offset < uploadFileSize) {
-                        const chunkSize = Math.min(uploadFileSize - offset, parameters.maxChunkSize);
-                        // if an individual file is greater than 100MB (1024*1024*100) in size, display extra information about the upload status
-                        if (uploadFileSize > 104857600) {
-                            this.statusReporter.updateLargeFileStatus(parameters.file, offset, uploadFileSize);
-                        }
-                        const start = offset;
-                        const end = offset + chunkSize - 1;
-                        offset += parameters.maxChunkSize;
-                        if (abortFileUpload) {
-                            // if we don't want to continue in the event of an error, any pending upload chunks will be marked as failed
-                            failedChunkSizes += chunkSize;
-                            continue;
-                        }
-                        const result = yield this.uploadChunk(httpClientIndex, parameters.resourceUrl, fs.createReadStream(uploadFilePath, {
-                            start,
-                            end,
-                            autoClose: false
-                        }), start, end, uploadFileSize, isGzip, totalFileSize);
-                        if (!result) {
-                            // Chunk failed to upload, report as failed and do not continue uploading any more chunks for the file. It is possible that part of a chunk was
-                            // successfully uploaded so the server may report a different size for what was uploaded
-                            isUploadSuccessful = false;
-                            failedChunkSizes += chunkSize;
-                            core.warning(`Aborting upload for ${parameters.file} due to failure`);
-                            abortFileUpload = true;
-                        }
+                    const start = offset;
+                    const end = offset + chunkSize - 1;
+                    offset += parameters.maxChunkSize;
+                    if (abortFileUpload) {
+                        // if we don't want to continue in the event of an error, any pending upload chunks will be marked as failed
+                        failedChunkSizes += chunkSize;
+                        continue;
                     }
-                }))
-                    .then(() => __awaiter(this, void 0, void 0, function* () {
-                    // only after the file upload is complete and the temporary file is deleted, return the UploadResult
-                    return new Promise(resolve => {
-                        resolve({
-                            isSuccess: isUploadSuccessful,
-                            successfulUploadSize: uploadFileSize - failedChunkSizes,
-                            totalSize: totalFileSize
-                        });
-                    });
-                }));
+                    const result = yield this.uploadChunk(httpClientIndex, parameters.resourceUrl, fs.createReadStream(uploadFilePath, {
+                        start,
+                        end,
+                        autoClose: false
+                    }), start, end, uploadFileSize, isGzip, totalFileSize);
+                    if (!result) {
+                        // Chunk failed to upload, report as failed and do not continue uploading any more chunks for the file. It is possible that part of a chunk was
+                        // successfully uploaded so the server may report a different size for what was uploaded
+                        isUploadSuccessful = false;
+                        failedChunkSizes += chunkSize;
+                        core.warning(`Aborting upload for ${parameters.file} due to failure`);
+                        abortFileUpload = true;
+                    }
+                }
+                // Delete the temporary file that was created as part of the upload. If the temp file does not get manually deleted by
+                // calling cleanup, it gets removed when the node process exits. For more info see: https://www.npmjs.com/package/tmp-promise#about
+                yield tempFile.cleanup();
+                return {
+                    isSuccess: isUploadSuccessful,
+                    successfulUploadSize: uploadFileSize - failedChunkSizes,
+                    totalSize: totalFileSize
+                };
             }
         });
     }
@@ -1441,10 +1438,10 @@ class UploadHttpClient {
     uploadChunk(httpClientIndex, resourceUrl, data, start, end, uploadFileSize, isGzip, totalFileSize) {
         return __awaiter(this, void 0, void 0, function* () {
             // prepare all the necessary headers before making any http call
-            const requestOptions = utils_1.getUploadRequestOptions('application/octet-stream', true, isGzip, totalFileSize, end - start + 1, utils_1.getContentRange(start, end, uploadFileSize));
+            const headers = utils_1.getUploadHeaders('application/octet-stream', true, isGzip, totalFileSize, end - start + 1, utils_1.getContentRange(start, end, uploadFileSize));
             const uploadChunkRequest = () => __awaiter(this, void 0, void 0, function* () {
                 const client = this.uploadHttpManager.getClient(httpClientIndex);
-                return yield client.sendStream('PUT', resourceUrl, data, requestOptions);
+                return yield client.sendStream('PUT', resourceUrl, data, headers);
             });
             let retryCount = 0;
             const retryLimit = config_variables_1.getRetryLimit();
@@ -1522,7 +1519,7 @@ class UploadHttpClient {
      */
     patchArtifactSize(size, artifactName) {
         return __awaiter(this, void 0, void 0, function* () {
-            const requestOptions = utils_1.getUploadRequestOptions('application/json', false);
+            const headers = utils_1.getUploadHeaders('application/json', false);
             const resourceUrl = new url_1.URL(utils_1.getArtifactUrl());
             resourceUrl.searchParams.append('artifactName', artifactName);
             const parameters = { Size: size };
@@ -1530,7 +1527,7 @@ class UploadHttpClient {
             core.debug(`URL is ${resourceUrl.toString()}`);
             // use the first client from the httpManager, `keep-alive` is not used so the connection will close immediately
             const client = this.uploadHttpManager.getClient(0);
-            const response = yield client.patch(resourceUrl.toString(), data, requestOptions);
+            const response = yield client.patch(resourceUrl.toString(), data, headers);
             const body = yield response.readBody();
             if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
                 core.debug(`Artifact ${artifactName} has been successfully uploaded, total size in bytes: ${size}`);
@@ -3353,15 +3350,15 @@ class DownloadHttpClient {
     listArtifacts() {
         return __awaiter(this, void 0, void 0, function* () {
             const artifactUrl = utils_1.getArtifactUrl();
-            // use the first client from the httpManager, `keep-alive` is not used so the connection will close immediately
             const client = this.downloadHttpManager.getClient(0);
-            const requestOptions = utils_1.getDownloadRequestOptions('application/json');
-            const response = yield client.get(artifactUrl, requestOptions);
+            const headers = utils_1.getDownloadHeaders('application/json', true);
+            const response = yield client.get(artifactUrl, headers);
             const body = yield response.readBody();
             if (utils_1.isSuccessStatusCode(response.message.statusCode) && body) {
                 return JSON.parse(body);
             }
             utils_1.displayHttpDiagnostics(response);
+            this.downloadHttpManager.disposeAllClients();
             throw new Error(`Unable to list artifacts for the run. Resource Url ${artifactUrl}`);
         });
     }
@@ -3375,15 +3372,15 @@ class DownloadHttpClient {
             // the itemPath search parameter controls which containers will be returned
             const resourceUrl = new url_1.URL(containerUrl);
             resourceUrl.searchParams.append('itemPath', artifactName);
-            // use the first client from the httpManager, `keep-alive` is not used so the connection will close immediately
             const client = this.downloadHttpManager.getClient(0);
-            const requestOptions = utils_1.getDownloadRequestOptions('application/json');
-            const response = yield client.get(resourceUrl.toString(), requestOptions);
+            const headers = utils_1.getDownloadHeaders('application/json', true);
+            const response = yield client.get(resourceUrl.toString(), headers);
             const body = yield response.readBody();
             if (utils_1.isSuccessStatusCode(response.message.statusCode) && body) {
                 return JSON.parse(body);
             }
             utils_1.displayHttpDiagnostics(response);
+            this.downloadHttpManager.disposeAllClients();
             throw new Error(`Unable to get ContainersItems from ${resourceUrl}`);
         });
     }
@@ -3420,7 +3417,7 @@ class DownloadHttpClient {
                 .finally(() => {
                 this.statusReporter.stop();
                 // safety dispose all connections
-                this.downloadHttpManager.disposeAndReplaceAllClients();
+                this.downloadHttpManager.disposeAllClients();
             });
         });
     }
@@ -3435,15 +3432,16 @@ class DownloadHttpClient {
             let retryCount = 0;
             const retryLimit = config_variables_1.getRetryLimit();
             const destinationStream = fs.createWriteStream(downloadPath);
-            const requestOptions = utils_1.getDownloadRequestOptions('application/json', true, true);
+            const headers = utils_1.getDownloadHeaders('application/json', true, true);
             // a single GET request is used to download a file
             const makeDownloadRequest = () => __awaiter(this, void 0, void 0, function* () {
                 const client = this.downloadHttpManager.getClient(httpClientIndex);
-                return yield client.get(artifactLocation, requestOptions);
+                return yield client.get(artifactLocation, headers);
             });
             // check the response headers to determine if the file was compressed using gzip
-            const isGzip = (headers) => {
-                return ('content-encoding' in headers && headers['content-encoding'] === 'gzip');
+            const isGzip = (incomingHeaders) => {
+                return ('content-encoding' in incomingHeaders &&
+                    incomingHeaders['content-encoding'] === 'gzip');
             };
             // Increments the current retry count and then checks if the retry limit has been reached
             // If there have been too many retries, fail so the download stops. If there is a retryAfterValue value provided,
@@ -5039,28 +5037,28 @@ exports.getContentRange = getContentRange;
  * @param {string} acceptType the type of content that we can accept
  * @returns appropriate request options to make a specific http call during artifact download
  */
-function getDownloadRequestOptions(contentType, isKeepAlive, acceptGzip) {
-    const requestOptions = {};
+function getDownloadHeaders(contentType, isKeepAlive, acceptGzip) {
+    const headers = {};
     if (contentType) {
-        requestOptions['Content-Type'] = contentType;
+        headers['Content-Type'] = contentType;
     }
     if (isKeepAlive) {
-        requestOptions['Connection'] = 'Keep-Alive';
+        headers['Connection'] = 'Keep-Alive';
         // keep alive for at least 10 seconds before closing the connection
-        requestOptions['Keep-Alive'] = '10';
+        headers['Keep-Alive'] = '10';
     }
     if (acceptGzip) {
         // if we are expecting a response with gzip encoding, it should be using an octet-stream in the accept header
-        requestOptions['Accept-Encoding'] = 'gzip';
-        requestOptions['Accept'] = `application/octet-stream;api-version=${getApiVersion()}`;
+        headers['Accept-Encoding'] = 'gzip';
+        headers['Accept'] = `application/octet-stream;api-version=${getApiVersion()}`;
     }
     else {
         // default to application/json if we are not working with gzip content
-        requestOptions['Accept'] = `application/json;api-version=${getApiVersion()}`;
+        headers['Accept'] = `application/json;api-version=${getApiVersion()}`;
     }
-    return requestOptions;
+    return headers;
 }
-exports.getDownloadRequestOptions = getDownloadRequestOptions;
+exports.getDownloadHeaders = getDownloadHeaders;
 /**
  * Sets all the necessary headers when uploading an artifact
  * @param {string} contentType the type of content being uploaded
@@ -5069,36 +5067,44 @@ exports.getDownloadRequestOptions = getDownloadRequestOptions;
  * @param {number} uncompressedLength the original size of the content if something is being uploaded that has been compressed
  * @param {number} contentLength the length of the content that is being uploaded
  * @param {string} contentRange the range of the content that is being uploaded
- * @returns appropriate request options to make a specific http call during artifact upload
+ * @returns appropriate request headers to make a specific http call during artifact upload
  */
-function getUploadRequestOptions(contentType, isKeepAlive, isGzip, uncompressedLength, contentLength, contentRange) {
-    const requestOptions = {};
-    requestOptions['Accept'] = `application/json;api-version=${getApiVersion()}`;
+function getUploadHeaders(contentType, isKeepAlive, isGzip, uncompressedLength, contentLength, contentRange) {
+    const headers = {};
+    headers['Accept'] = `application/json;api-version=${getApiVersion()}`;
     if (contentType) {
-        requestOptions['Content-Type'] = contentType;
+        headers['Content-Type'] = contentType;
     }
     if (isKeepAlive) {
-        requestOptions['Connection'] = 'Keep-Alive';
+        headers['Connection'] = 'Keep-Alive';
         // keep alive for at least 10 seconds before closing the connection
-        requestOptions['Keep-Alive'] = '10';
+        headers['Keep-Alive'] = '10';
     }
     if (isGzip) {
-        requestOptions['Content-Encoding'] = 'gzip';
-        requestOptions['x-tfs-filelength'] = uncompressedLength;
+        headers['Content-Encoding'] = 'gzip';
+        headers['x-tfs-filelength'] = uncompressedLength;
     }
     if (contentLength) {
-        requestOptions['Content-Length'] = contentLength;
+        headers['Content-Length'] = contentLength;
     }
     if (contentRange) {
-        requestOptions['Content-Range'] = contentRange;
+        headers['Content-Range'] = contentRange;
     }
-    return requestOptions;
+    return headers;
 }
-exports.getUploadRequestOptions = getUploadRequestOptions;
+exports.getUploadHeaders = getUploadHeaders;
+/**
+ * Creates a new http client that is used by the http-managers when making calls to either upload or download an artifact
+ */
 function createHttpClient() {
-    return new http_client_1.HttpClient('action/artifact', [
-        new auth_1.BearerCredentialHandler(config_variables_1.getRuntimeToken())
-    ]);
+    const requestOptions = {
+        // headers get set individually before each call as they can vary significantly
+        headers: [],
+        // keep alive is configured at the http-client level and is used by each client when making calls, this is independent
+        // of the keep-alive header that is used to let the remove server know how the connection should be treated
+        keepAlive: true
+    };
+    return new http_client_1.HttpClient('actions/artifact', [new auth_1.BearerCredentialHandler(config_variables_1.getRuntimeToken())], requestOptions);
 }
 exports.createHttpClient = createHttpClient;
 function getArtifactUrl() {
@@ -5132,16 +5138,7 @@ exports.displayHttpDiagnostics = displayHttpDiagnostics;
  *
  * FilePaths can include characters such as \ and / which are not permitted in the artifact name alone
  */
-const invalidArtifactFilePathCharacters = [
-    '"',
-    ':',
-    '<',
-    '>',
-    '|',
-    '*',
-    '?',
-    ' '
-];
+const invalidArtifactFilePathCharacters = ['"', ':', '<', '>', '|', '*', '?'];
 const invalidArtifactNameCharacters = [
     ...invalidArtifactFilePathCharacters,
     '\\',
@@ -7286,7 +7283,7 @@ class StatusReporter {
             for (const value of Array.from(this.largeFiles.values())) {
                 core_1.info(value);
             }
-            // delete all entires in the map after displaying the information so it will not be displayed again unless explicitly added
+            // delete all entries in the map after displaying the information so it will not be displayed again unless explicitly added
             this.largeFiles.clear();
         }, 1000);
     }
