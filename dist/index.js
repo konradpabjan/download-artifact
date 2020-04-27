@@ -1140,7 +1140,6 @@ function regExpEscape (s) {
 
 Object.defineProperty(exports, "__esModule", { value: true });
 const utils_1 = __webpack_require__(844);
-const core_1 = __webpack_require__(211);
 /**
  * Used for managing http clients during either upload or download
  */
@@ -1155,13 +1154,6 @@ class HttpManager {
         return this.clients[index];
     }
     // client disposal is necessary if a keep-alive connection is used to properly close the connection
-    // this should be called if a connection gets reset, timeouts or gets dropped for some unexpected reason and we would like to retry
-    // for more information see: https://github.com/actions/http-client/blob/04e5ad73cd3fd1f5610a32116b0759eddf6570d2/index.ts#L292
-    disposeAndReplaceClient(index) {
-        core_1.info(`disposing and replacing http client ${index}`);
-        this.clients[index].dispose();
-        this.clients[index] = utils_1.createHttpClient();
-    }
     disposeAllClients() {
         for (const [index] of this.clients.entries()) {
             this.clients[index].dispose();
@@ -1405,7 +1397,7 @@ class UploadHttpClient {
                     const result = yield this.uploadChunk(httpClientIndex, parameters.resourceUrl, fs.createReadStream(uploadFilePath, {
                         start,
                         end,
-                        autoClose: false
+                        autoClose: true
                     }), start, end, uploadFileSize, isGzip, totalFileSize);
                     if (!result) {
                         // Chunk failed to upload, report as failed and do not continue uploading any more chunks for the file. It is possible that part of a chunk was
@@ -1464,7 +1456,6 @@ class UploadHttpClient {
                 return false;
             };
             const backOff = (retryAfterValue) => __awaiter(this, void 0, void 0, function* () {
-                this.uploadHttpManager.disposeAndReplaceClient(httpClientIndex);
                 if (retryAfterValue) {
                     core.info(`Backoff due to too many requests, retry #${retryCount}. Waiting for ${retryAfterValue} milliseconds before continuing the upload`);
                     yield new Promise(resolve => setTimeout(resolve, retryAfterValue));
@@ -3463,7 +3454,6 @@ class DownloadHttpClient {
                     return Promise.reject(new Error(`Retry limit has been reached. Unable to download ${artifactLocation}`));
                 }
                 else {
-                    this.downloadHttpManager.disposeAndReplaceClient(httpClientIndex);
                     if (retryAfterValue) {
                         // Back off by waiting the specified time denoted by the retry-after header
                         core.info(`Backoff due to too many requests, retry #${retryCount}. Waiting for ${retryAfterValue} milliseconds before continuing the download`);
