@@ -4991,7 +4991,8 @@ function isRetryableStatusCode(statusCode) {
         http_client_1.HttpCodes.BadGateway,
         http_client_1.HttpCodes.ServiceUnavailable,
         http_client_1.HttpCodes.GatewayTimeout,
-        http_client_1.HttpCodes.TooManyRequests
+        http_client_1.HttpCodes.TooManyRequests,
+        http_client_1.HttpCodes.InternalServerError
     ];
     return retryableStatusCodes.includes(statusCode);
 }
