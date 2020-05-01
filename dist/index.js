@@ -1153,6 +1153,17 @@ class HttpManager {
     getClient(index) {
         return this.clients[index];
     }
+    // client disposal is necessary if a keep-alive connection is used to properly close the connection
+    // for more information see: https://github.com/actions/http-client/blob/04e5ad73cd3fd1f5610a32116b0759eddf6570d2/index.ts#L292
+    disposeAndReplaceClient(index) {
+        this.clients[index].dispose();
+        this.clients[index] = utils_1.createHttpClient();
+    }
+    disposeAndReplaceAllClients() {
+        for (const [index] of this.clients.entries()) {
+            this.disposeAndReplaceClient(index);
+        }
+    }
 }
 exports.HttpManager = HttpManager;
 //# sourceMappingURL=http-manager.js.map
@@ -1212,10 +1223,9 @@ class UploadHttpClient {
             };
             const data = JSON.stringify(parameters, null, 2);
             const artifactUrl = utils_1.getArtifactUrl();
-            // use the first client from the httpManager, `keep-alive` is used because the same http client will be
-            // used shortly afterwards to start uploading files individually so there is no point in closing the connection
+            // use the first client from the httpManager, `keep-alive` is not used so the connection will close immediately
             const client = this.uploadHttpManager.getClient(0);
-            const headers = utils_1.getUploadHeaders('application/json', true);
+            const headers = utils_1.getUploadHeaders('application/json', false);
             const rawResponse = yield client.post(artifactUrl, data, headers);
             const body = yield rawResponse.readBody();
             if (utils_1.isSuccessStatusCode(rawResponse.message.statusCode) && body) {
@@ -1299,6 +1309,8 @@ class UploadHttpClient {
                 }
             })));
             this.statusReporter.stop();
+            // done uploading, safety dispose all connections
+            this.uploadHttpManager.disposeAndReplaceAllClients();
             core.info(`Total size of all the files uploaded is ${uploadFileSize} bytes`);
             return {
                 uploadSize: uploadFileSize,
@@ -1385,7 +1397,7 @@ class UploadHttpClient {
                     const result = yield this.uploadChunk(httpClientIndex, parameters.resourceUrl, fs.createReadStream(uploadFilePath, {
                         start,
                         end,
-                        autoClose: true
+                        autoClose: false
                     }), start, end, uploadFileSize, isGzip, totalFileSize);
                     if (!result) {
                         // Chunk failed to upload, report as failed and do not continue uploading any more chunks for the file. It is possible that part of a chunk was
@@ -1444,6 +1456,7 @@ class UploadHttpClient {
                 return false;
             };
             const backOff = (retryAfterValue) => __awaiter(this, void 0, void 0, function* () {
+                this.uploadHttpManager.disposeAndReplaceClient(httpClientIndex);
                 if (retryAfterValue) {
                     core.info(`Backoff due to too many requests, retry #${retryCount}. Waiting for ${retryAfterValue} milliseconds before continuing the upload`);
                     yield new Promise(resolve => setTimeout(resolve, retryAfterValue));
@@ -1627,523 +1640,7 @@ exports.getUploadSpecification = getUploadSpecification;
 
 /***/ }),
 
-/***/ 181:
-/***/ (function(__unusedmodule, exports) {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", { value: true });
-class BasicCredentialHandler {
-    constructor(username, password) {
-        this.username = username;
-        this.password = password;
-    }
-    prepareRequest(options) {
-        options.headers['Authorization'] = 'Basic ' + Buffer.from(this.username + ':' + this.password).toString('base64');
-    }
-    // This handler cannot handle 401
-    canHandleAuthentication(response) {
-        return false;
-    }
-    handleAuthentication(httpClient, requestInfo, objs) {
-        return null;
-    }
-}
-exports.BasicCredentialHandler = BasicCredentialHandler;
-class BearerCredentialHandler {
-    constructor(token) {
-        this.token = token;
-    }
-    // currently implements pre-authorization
-    // TODO: support preAuth = false where it hooks on 401
-    prepareRequest(options) {
-        options.headers['Authorization'] = 'Bearer ' + this.token;
-    }
-    // This handler cannot handle 401
-    canHandleAuthentication(response) {
-        return false;
-    }
-    handleAuthentication(httpClient, requestInfo, objs) {
-        return null;
-    }
-}
-exports.BearerCredentialHandler = BearerCredentialHandler;
-class PersonalAccessTokenCredentialHandler {
-    constructor(token) {
-        this.token = token;
-    }
-    // currently implements pre-authorization
-    // TODO: support preAuth = false where it hooks on 401
-    prepareRequest(options) {
-        options.headers['Authorization'] = 'Basic ' + Buffer.from('PAT:' + this.token).toString('base64');
-    }
-    // This handler cannot handle 401
-    canHandleAuthentication(response) {
-        return false;
-    }
-    handleAuthentication(httpClient, requestInfo, objs) {
-        return null;
-    }
-}
-exports.PersonalAccessTokenCredentialHandler = PersonalAccessTokenCredentialHandler;
-
-
-/***/ }),
-
-/***/ 211:
-/***/ (function(__unusedmodule, exports, __webpack_require__) {
-
-"use strict";
-
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (Object.hasOwnProperty.call(mod, k)) result[k] = mod[k];
-    result["default"] = mod;
-    return result;
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-const command_1 = __webpack_require__(536);
-const os = __importStar(__webpack_require__(87));
-const path = __importStar(__webpack_require__(622));
-/**
- * The code to exit an action
- */
-var ExitCode;
-(function (ExitCode) {
-    /**
-     * A code indicating that the action was successful
-     */
-    ExitCode[ExitCode["Success"] = 0] = "Success";
-    /**
-     * A code indicating that the action was a failure
-     */
-    ExitCode[ExitCode["Failure"] = 1] = "Failure";
-})(ExitCode = exports.ExitCode || (exports.ExitCode = {}));
-//-----------------------------------------------------------------------
-// Variables
-//-----------------------------------------------------------------------
-/**
- * Sets env variable for this action and future actions in the job
- * @param name the name of the variable to set
- * @param val the value of the variable
- */
-function exportVariable(name, val) {
-    process.env[name] = val;
-    command_1.issueCommand('set-env', { name }, val);
-}
-exports.exportVariable = exportVariable;
-/**
- * Registers a secret which will get masked from logs
- * @param secret value of the secret
- */
-function setSecret(secret) {
-    command_1.issueCommand('add-mask', {}, secret);
-}
-exports.setSecret = setSecret;
-/**
- * Prepends inputPath to the PATH (for this action and future actions)
- * @param inputPath
- */
-function addPath(inputPath) {
-    command_1.issueCommand('add-path', {}, inputPath);
-    process.env['PATH'] = `${inputPath}${path.delimiter}${process.env['PATH']}`;
-}
-exports.addPath = addPath;
-/**
- * Gets the value of an input.  The value is also trimmed.
- *
- * @param     name     name of the input to get
- * @param     options  optional. See InputOptions.
- * @returns   string
- */
-function getInput(name, options) {
-    const val = process.env[`INPUT_${name.replace(/ /g, '_').toUpperCase()}`] || '';
-    if (options && options.required && !val) {
-        throw new Error(`Input required and not supplied: ${name}`);
-    }
-    return val.trim();
-}
-exports.getInput = getInput;
-/**
- * Sets the value of an output.
- *
- * @param     name     name of the output to set
- * @param     value    value to store
- */
-function setOutput(name, value) {
-    command_1.issueCommand('set-output', { name }, value);
-}
-exports.setOutput = setOutput;
-//-----------------------------------------------------------------------
-// Results
-//-----------------------------------------------------------------------
-/**
- * Sets the action status to failed.
- * When the action exits it will be with an exit code of 1
- * @param message add error issue message
- */
-function setFailed(message) {
-    process.exitCode = ExitCode.Failure;
-    error(message);
-}
-exports.setFailed = setFailed;
-//-----------------------------------------------------------------------
-// Logging Commands
-//-----------------------------------------------------------------------
-/**
- * Gets whether Actions Step Debug is on or not
- */
-function isDebug() {
-    return process.env['RUNNER_DEBUG'] === '1';
-}
-exports.isDebug = isDebug;
-/**
- * Writes debug message to user log
- * @param message debug message
- */
-function debug(message) {
-    command_1.issueCommand('debug', {}, message);
-}
-exports.debug = debug;
-/**
- * Adds an error issue
- * @param message error issue message
- */
-function error(message) {
-    command_1.issue('error', message);
-}
-exports.error = error;
-/**
- * Adds an warning issue
- * @param message warning issue message
- */
-function warning(message) {
-    command_1.issue('warning', message);
-}
-exports.warning = warning;
-/**
- * Writes info to log with console.log.
- * @param message info message
- */
-function info(message) {
-    process.stdout.write(message + os.EOL);
-}
-exports.info = info;
-/**
- * Begin an output group.
- *
- * Output until the next `groupEnd` will be foldable in this group
- *
- * @param name The name of the output group
- */
-function startGroup(name) {
-    command_1.issue('group', name);
-}
-exports.startGroup = startGroup;
-/**
- * End an output group.
- */
-function endGroup() {
-    command_1.issue('endgroup');
-}
-exports.endGroup = endGroup;
-/**
- * Wrap an asynchronous function call in a group.
- *
- * Returns the same type as the function itself.
- *
- * @param name The name of the group
- * @param fn The function to wrap in the group
- */
-function group(name, fn) {
-    return __awaiter(this, void 0, void 0, function* () {
-        startGroup(name);
-        let result;
-        try {
-            result = yield fn();
-        }
-        finally {
-            endGroup();
-        }
-        return result;
-    });
-}
-exports.group = group;
-//-----------------------------------------------------------------------
-// Wrapper action state
-//-----------------------------------------------------------------------
-/**
- * Saves state for current action, the state can only be retrieved by this action's post job execution.
- *
- * @param     name     name of the state to store
- * @param     value    value to store
- */
-function saveState(name, value) {
-    command_1.issueCommand('save-state', { name }, value);
-}
-exports.saveState = saveState;
-/**
- * Gets the value of an state set by this action's main execution.
- *
- * @param     name     name of the state to get
- * @returns   string
- */
-function getState(name) {
-    return process.env[`STATE_${name}`] || '';
-}
-exports.getState = getState;
-//# sourceMappingURL=core.js.map
-
-/***/ }),
-
-/***/ 231:
-/***/ (function(__unusedmodule, exports, __webpack_require__) {
-
-"use strict";
-
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (Object.hasOwnProperty.call(mod, k)) result[k] = mod[k];
-    result["default"] = mod;
-    return result;
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-const core = __importStar(__webpack_require__(211));
-const upload_specification_1 = __webpack_require__(155);
-const upload_http_client_1 = __webpack_require__(142);
-const utils_1 = __webpack_require__(844);
-const download_http_client_1 = __webpack_require__(342);
-const download_specification_1 = __webpack_require__(721);
-const config_variables_1 = __webpack_require__(706);
-const path_1 = __webpack_require__(622);
-class DefaultArtifactClient {
-    /**
-     * Constructs a DefaultArtifactClient
-     */
-    static create() {
-        return new DefaultArtifactClient();
-    }
-    /**
-     * Uploads an artifact
-     */
-    uploadArtifact(name, files, rootDirectory, options) {
-        return __awaiter(this, void 0, void 0, function* () {
-            utils_1.checkArtifactName(name);
-            // Get specification for the files being uploaded
-            const uploadSpecification = upload_specification_1.getUploadSpecification(name, rootDirectory, files);
-            const uploadResponse = {
-                artifactName: name,
-                artifactItems: [],
-                size: 0,
-                failedItems: []
-            };
-            const uploadHttpClient = new upload_http_client_1.UploadHttpClient();
-            if (uploadSpecification.length === 0) {
-                core.warning(`No files found that can be uploaded`);
-            }
-            else {
-                // Create an entry for the artifact in the file container
-                const response = yield uploadHttpClient.createArtifactInFileContainer(name);
-                if (!response.fileContainerResourceUrl) {
-                    core.debug(response.toString());
-                    throw new Error('No URL provided by the Artifact Service to upload an artifact to');
-                }
-                core.debug(`Upload Resource URL: ${response.fileContainerResourceUrl}`);
-                // Upload each of the files that were found concurrently
-                const uploadResult = yield uploadHttpClient.uploadArtifactToFileContainer(response.fileContainerResourceUrl, uploadSpecification, options);
-                // Update the size of the artifact to indicate we are done uploading
-                // The uncompressed size is used for display when downloading a zip of the artifact from the UI
-                yield uploadHttpClient.patchArtifactSize(uploadResult.totalSize, name);
-                core.info(`Finished uploading artifact ${name}. Reported size is ${uploadResult.uploadSize} bytes. There were ${uploadResult.failedItems.length} items that failed to upload`);
-                uploadResponse.artifactItems = uploadSpecification.map(item => item.absoluteFilePath);
-                uploadResponse.size = uploadResult.uploadSize;
-                uploadResponse.failedItems = uploadResult.failedItems;
-            }
-            return uploadResponse;
-        });
-    }
-    downloadArtifact(name, path, options) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const downloadHttpClient = new download_http_client_1.DownloadHttpClient();
-            const artifacts = yield downloadHttpClient.listArtifacts();
-            if (artifacts.count === 0) {
-                throw new Error(`Unable to find any artifacts for the associated workflow`);
-            }
-            const artifactToDownload = artifacts.value.find(artifact => {
-                return artifact.name === name;
-            });
-            if (!artifactToDownload) {
-                throw new Error(`Unable to find an artifact with the name: ${name}`);
-            }
-            const items = yield downloadHttpClient.getContainerItems(artifactToDownload.name, artifactToDownload.fileContainerResourceUrl);
-            if (!path) {
-                path = config_variables_1.getWorkSpaceDirectory();
-            }
-            path = path_1.normalize(path);
-            path = path_1.resolve(path);
-            // During upload, empty directories are rejected by the remote server so there should be no artifacts that consist of only empty directories
-            const downloadSpecification = download_specification_1.getDownloadSpecification(name, items.value, path, (options === null || options === void 0 ? void 0 : options.createArtifactFolder) || false);
-            if (downloadSpecification.filesToDownload.length === 0) {
-                core.info(`No downloadable files were found for the artifact: ${artifactToDownload.name}`);
-            }
-            else {
-                // Create all necessary directories recursively before starting any download
-                yield utils_1.createDirectoriesForArtifact(downloadSpecification.directoryStructure);
-                core.info('Directory structure has been setup for the artifact');
-                yield utils_1.createEmptyFilesForArtifact(downloadSpecification.emptyFilesToCreate);
-                yield downloadHttpClient.downloadSingleArtifact(downloadSpecification.filesToDownload);
-            }
-            return {
-                artifactName: name,
-                downloadPath: downloadSpecification.rootDownloadLocation
-            };
-        });
-    }
-    downloadAllArtifacts(path) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const downloadHttpClient = new download_http_client_1.DownloadHttpClient();
-            const response = [];
-            const artifacts = yield downloadHttpClient.listArtifacts();
-            if (artifacts.count === 0) {
-                core.info('Unable to find any artifacts for the associated workflow');
-                return response;
-            }
-            if (!path) {
-                path = config_variables_1.getWorkSpaceDirectory();
-            }
-            path = path_1.normalize(path);
-            path = path_1.resolve(path);
-            let downloadedArtifacts = 0;
-            while (downloadedArtifacts < artifacts.count) {
-                const currentArtifactToDownload = artifacts.value[downloadedArtifacts];
-                downloadedArtifacts += 1;
-                // Get container entries for the specific artifact
-                const items = yield downloadHttpClient.getContainerItems(currentArtifactToDownload.name, currentArtifactToDownload.fileContainerResourceUrl);
-                const downloadSpecification = download_specification_1.getDownloadSpecification(currentArtifactToDownload.name, items.value, path, true);
-                if (downloadSpecification.filesToDownload.length === 0) {
-                    core.info(`No downloadable files were found for any artifact ${currentArtifactToDownload.name}`);
-                }
-                else {
-                    yield utils_1.createDirectoriesForArtifact(downloadSpecification.directoryStructure);
-                    yield utils_1.createEmptyFilesForArtifact(downloadSpecification.emptyFilesToCreate);
-                    yield downloadHttpClient.downloadSingleArtifact(downloadSpecification.filesToDownload);
-                }
-                response.push({
-                    artifactName: currentArtifactToDownload.name,
-                    downloadPath: downloadSpecification.rootDownloadLocation
-                });
-            }
-            return response;
-        });
-    }
-}
-exports.DefaultArtifactClient = DefaultArtifactClient;
-//# sourceMappingURL=artifact-client.js.map
-
-/***/ }),
-
-/***/ 255:
-/***/ (function(module, __unusedexports, __webpack_require__) {
-
-var wrappy = __webpack_require__(93)
-var reqs = Object.create(null)
-var once = __webpack_require__(619)
-
-module.exports = wrappy(inflight)
-
-function inflight (key, cb) {
-  if (reqs[key]) {
-    reqs[key].push(cb)
-    return null
-  } else {
-    reqs[key] = [cb]
-    return makeres(key)
-  }
-}
-
-function makeres (key) {
-  return once(function RES () {
-    var cbs = reqs[key]
-    var len = cbs.length
-    var args = slice(arguments)
-
-    // XXX It's somewhat ambiguous whether a new callback added in this
-    // pass should be queued for later execution if something in the
-    // list of callbacks throws, or if it should just be discarded.
-    // However, it's such an edge case that it hardly matters, and either
-    // choice is likely as surprising as the other.
-    // As it happens, we do go ahead and schedule it for later execution.
-    try {
-      for (var i = 0; i < len; i++) {
-        cbs[i].apply(null, args)
-      }
-    } finally {
-      if (cbs.length > len) {
-        // added more in the interim.
-        // de-zalgo, just in case, but don't call again.
-        cbs.splice(0, len)
-        process.nextTick(function () {
-          RES.apply(null, args)
-        })
-      } else {
-        delete reqs[key]
-      }
-    }
-  })
-}
-
-function slice (args) {
-  var length = args.length
-  var array = []
-
-  for (var i = 0; i < length; i++) array[i] = args[i]
-  return array
-}
-
-
-/***/ }),
-
-/***/ 270:
-/***/ (function(module) {
-
-module.exports = function (xs, fn) {
-    var res = [];
-    for (var i = 0; i < xs.length; i++) {
-        var x = fn(xs[i], i);
-        if (isArray(x)) res.push.apply(res, x);
-        else res.push(x);
-    }
-    return res;
-};
-
-var isArray = Array.isArray || function (xs) {
-    return Object.prototype.toString.call(xs) === '[object Array]';
-};
-
-
-/***/ }),
-
-/***/ 300:
+/***/ 159:
 /***/ (function(module, __unusedexports, __webpack_require__) {
 
 module.exports = rimraf
@@ -2522,7 +2019,785 @@ function rmkidsSync (p, options) {
 
 /***/ }),
 
-/***/ 317:
+/***/ 181:
+/***/ (function(__unusedmodule, exports) {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", { value: true });
+class BasicCredentialHandler {
+    constructor(username, password) {
+        this.username = username;
+        this.password = password;
+    }
+    prepareRequest(options) {
+        options.headers['Authorization'] =
+            'Basic ' +
+                Buffer.from(this.username + ':' + this.password).toString('base64');
+    }
+    // This handler cannot handle 401
+    canHandleAuthentication(response) {
+        return false;
+    }
+    handleAuthentication(httpClient, requestInfo, objs) {
+        return null;
+    }
+}
+exports.BasicCredentialHandler = BasicCredentialHandler;
+class BearerCredentialHandler {
+    constructor(token) {
+        this.token = token;
+    }
+    // currently implements pre-authorization
+    // TODO: support preAuth = false where it hooks on 401
+    prepareRequest(options) {
+        options.headers['Authorization'] = 'Bearer ' + this.token;
+    }
+    // This handler cannot handle 401
+    canHandleAuthentication(response) {
+        return false;
+    }
+    handleAuthentication(httpClient, requestInfo, objs) {
+        return null;
+    }
+}
+exports.BearerCredentialHandler = BearerCredentialHandler;
+class PersonalAccessTokenCredentialHandler {
+    constructor(token) {
+        this.token = token;
+    }
+    // currently implements pre-authorization
+    // TODO: support preAuth = false where it hooks on 401
+    prepareRequest(options) {
+        options.headers['Authorization'] =
+            'Basic ' + Buffer.from('PAT:' + this.token).toString('base64');
+    }
+    // This handler cannot handle 401
+    canHandleAuthentication(response) {
+        return false;
+    }
+    handleAuthentication(httpClient, requestInfo, objs) {
+        return null;
+    }
+}
+exports.PersonalAccessTokenCredentialHandler = PersonalAccessTokenCredentialHandler;
+
+
+/***/ }),
+
+/***/ 211:
+/***/ (function(__unusedmodule, exports, __webpack_require__) {
+
+"use strict";
+
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (Object.hasOwnProperty.call(mod, k)) result[k] = mod[k];
+    result["default"] = mod;
+    return result;
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const command_1 = __webpack_require__(536);
+const os = __importStar(__webpack_require__(87));
+const path = __importStar(__webpack_require__(622));
+/**
+ * The code to exit an action
+ */
+var ExitCode;
+(function (ExitCode) {
+    /**
+     * A code indicating that the action was successful
+     */
+    ExitCode[ExitCode["Success"] = 0] = "Success";
+    /**
+     * A code indicating that the action was a failure
+     */
+    ExitCode[ExitCode["Failure"] = 1] = "Failure";
+})(ExitCode = exports.ExitCode || (exports.ExitCode = {}));
+//-----------------------------------------------------------------------
+// Variables
+//-----------------------------------------------------------------------
+/**
+ * Sets env variable for this action and future actions in the job
+ * @param name the name of the variable to set
+ * @param val the value of the variable. Non-string values will be converted to a string via JSON.stringify
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function exportVariable(name, val) {
+    const convertedVal = command_1.toCommandValue(val);
+    process.env[name] = convertedVal;
+    command_1.issueCommand('set-env', { name }, convertedVal);
+}
+exports.exportVariable = exportVariable;
+/**
+ * Registers a secret which will get masked from logs
+ * @param secret value of the secret
+ */
+function setSecret(secret) {
+    command_1.issueCommand('add-mask', {}, secret);
+}
+exports.setSecret = setSecret;
+/**
+ * Prepends inputPath to the PATH (for this action and future actions)
+ * @param inputPath
+ */
+function addPath(inputPath) {
+    command_1.issueCommand('add-path', {}, inputPath);
+    process.env['PATH'] = `${inputPath}${path.delimiter}${process.env['PATH']}`;
+}
+exports.addPath = addPath;
+/**
+ * Gets the value of an input.  The value is also trimmed.
+ *
+ * @param     name     name of the input to get
+ * @param     options  optional. See InputOptions.
+ * @returns   string
+ */
+function getInput(name, options) {
+    const val = process.env[`INPUT_${name.replace(/ /g, '_').toUpperCase()}`] || '';
+    if (options && options.required && !val) {
+        throw new Error(`Input required and not supplied: ${name}`);
+    }
+    return val.trim();
+}
+exports.getInput = getInput;
+/**
+ * Sets the value of an output.
+ *
+ * @param     name     name of the output to set
+ * @param     value    value to store. Non-string values will be converted to a string via JSON.stringify
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function setOutput(name, value) {
+    command_1.issueCommand('set-output', { name }, value);
+}
+exports.setOutput = setOutput;
+/**
+ * Enables or disables the echoing of commands into stdout for the rest of the step.
+ * Echoing is disabled by default if ACTIONS_STEP_DEBUG is not set.
+ *
+ */
+function setCommandEcho(enabled) {
+    command_1.issue('echo', enabled ? 'on' : 'off');
+}
+exports.setCommandEcho = setCommandEcho;
+//-----------------------------------------------------------------------
+// Results
+//-----------------------------------------------------------------------
+/**
+ * Sets the action status to failed.
+ * When the action exits it will be with an exit code of 1
+ * @param message add error issue message
+ */
+function setFailed(message) {
+    process.exitCode = ExitCode.Failure;
+    error(message);
+}
+exports.setFailed = setFailed;
+//-----------------------------------------------------------------------
+// Logging Commands
+//-----------------------------------------------------------------------
+/**
+ * Gets whether Actions Step Debug is on or not
+ */
+function isDebug() {
+    return process.env['RUNNER_DEBUG'] === '1';
+}
+exports.isDebug = isDebug;
+/**
+ * Writes debug message to user log
+ * @param message debug message
+ */
+function debug(message) {
+    command_1.issueCommand('debug', {}, message);
+}
+exports.debug = debug;
+/**
+ * Adds an error issue
+ * @param message error issue message. Errors will be converted to string via toString()
+ */
+function error(message) {
+    command_1.issue('error', message instanceof Error ? message.toString() : message);
+}
+exports.error = error;
+/**
+ * Adds an warning issue
+ * @param message warning issue message. Errors will be converted to string via toString()
+ */
+function warning(message) {
+    command_1.issue('warning', message instanceof Error ? message.toString() : message);
+}
+exports.warning = warning;
+/**
+ * Writes info to log with console.log.
+ * @param message info message
+ */
+function info(message) {
+    process.stdout.write(message + os.EOL);
+}
+exports.info = info;
+/**
+ * Begin an output group.
+ *
+ * Output until the next `groupEnd` will be foldable in this group
+ *
+ * @param name The name of the output group
+ */
+function startGroup(name) {
+    command_1.issue('group', name);
+}
+exports.startGroup = startGroup;
+/**
+ * End an output group.
+ */
+function endGroup() {
+    command_1.issue('endgroup');
+}
+exports.endGroup = endGroup;
+/**
+ * Wrap an asynchronous function call in a group.
+ *
+ * Returns the same type as the function itself.
+ *
+ * @param name The name of the group
+ * @param fn The function to wrap in the group
+ */
+function group(name, fn) {
+    return __awaiter(this, void 0, void 0, function* () {
+        startGroup(name);
+        let result;
+        try {
+            result = yield fn();
+        }
+        finally {
+            endGroup();
+        }
+        return result;
+    });
+}
+exports.group = group;
+//-----------------------------------------------------------------------
+// Wrapper action state
+//-----------------------------------------------------------------------
+/**
+ * Saves state for current action, the state can only be retrieved by this action's post job execution.
+ *
+ * @param     name     name of the state to store
+ * @param     value    value to store. Non-string values will be converted to a string via JSON.stringify
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function saveState(name, value) {
+    command_1.issueCommand('save-state', { name }, value);
+}
+exports.saveState = saveState;
+/**
+ * Gets the value of an state set by this action's main execution.
+ *
+ * @param     name     name of the state to get
+ * @returns   string
+ */
+function getState(name) {
+    return process.env[`STATE_${name}`] || '';
+}
+exports.getState = getState;
+//# sourceMappingURL=core.js.map
+
+/***/ }),
+
+/***/ 231:
+/***/ (function(__unusedmodule, exports, __webpack_require__) {
+
+"use strict";
+
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (Object.hasOwnProperty.call(mod, k)) result[k] = mod[k];
+    result["default"] = mod;
+    return result;
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const core = __importStar(__webpack_require__(211));
+const upload_specification_1 = __webpack_require__(155);
+const upload_http_client_1 = __webpack_require__(142);
+const utils_1 = __webpack_require__(844);
+const download_http_client_1 = __webpack_require__(342);
+const download_specification_1 = __webpack_require__(721);
+const config_variables_1 = __webpack_require__(706);
+const path_1 = __webpack_require__(622);
+class DefaultArtifactClient {
+    /**
+     * Constructs a DefaultArtifactClient
+     */
+    static create() {
+        return new DefaultArtifactClient();
+    }
+    /**
+     * Uploads an artifact
+     */
+    uploadArtifact(name, files, rootDirectory, options) {
+        return __awaiter(this, void 0, void 0, function* () {
+            utils_1.checkArtifactName(name);
+            // Get specification for the files being uploaded
+            const uploadSpecification = upload_specification_1.getUploadSpecification(name, rootDirectory, files);
+            const uploadResponse = {
+                artifactName: name,
+                artifactItems: [],
+                size: 0,
+                failedItems: []
+            };
+            const uploadHttpClient = new upload_http_client_1.UploadHttpClient();
+            if (uploadSpecification.length === 0) {
+                core.warning(`No files found that can be uploaded`);
+            }
+            else {
+                // Create an entry for the artifact in the file container
+                const response = yield uploadHttpClient.createArtifactInFileContainer(name);
+                if (!response.fileContainerResourceUrl) {
+                    core.debug(response.toString());
+                    throw new Error('No URL provided by the Artifact Service to upload an artifact to');
+                }
+                core.debug(`Upload Resource URL: ${response.fileContainerResourceUrl}`);
+                // Upload each of the files that were found concurrently
+                const uploadResult = yield uploadHttpClient.uploadArtifactToFileContainer(response.fileContainerResourceUrl, uploadSpecification, options);
+                // Update the size of the artifact to indicate we are done uploading
+                // The uncompressed size is used for display when downloading a zip of the artifact from the UI
+                yield uploadHttpClient.patchArtifactSize(uploadResult.totalSize, name);
+                core.info(`Finished uploading artifact ${name}. Reported size is ${uploadResult.uploadSize} bytes. There were ${uploadResult.failedItems.length} items that failed to upload`);
+                uploadResponse.artifactItems = uploadSpecification.map(item => item.absoluteFilePath);
+                uploadResponse.size = uploadResult.uploadSize;
+                uploadResponse.failedItems = uploadResult.failedItems;
+            }
+            return uploadResponse;
+        });
+    }
+    downloadArtifact(name, path, options) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const downloadHttpClient = new download_http_client_1.DownloadHttpClient();
+            const artifacts = yield downloadHttpClient.listArtifacts();
+            if (artifacts.count === 0) {
+                throw new Error(`Unable to find any artifacts for the associated workflow`);
+            }
+            const artifactToDownload = artifacts.value.find(artifact => {
+                return artifact.name === name;
+            });
+            if (!artifactToDownload) {
+                throw new Error(`Unable to find an artifact with the name: ${name}`);
+            }
+            const items = yield downloadHttpClient.getContainerItems(artifactToDownload.name, artifactToDownload.fileContainerResourceUrl);
+            if (!path) {
+                path = config_variables_1.getWorkSpaceDirectory();
+            }
+            path = path_1.normalize(path);
+            path = path_1.resolve(path);
+            // During upload, empty directories are rejected by the remote server so there should be no artifacts that consist of only empty directories
+            const downloadSpecification = download_specification_1.getDownloadSpecification(name, items.value, path, (options === null || options === void 0 ? void 0 : options.createArtifactFolder) || false);
+            if (downloadSpecification.filesToDownload.length === 0) {
+                core.info(`No downloadable files were found for the artifact: ${artifactToDownload.name}`);
+            }
+            else {
+                // Create all necessary directories recursively before starting any download
+                yield utils_1.createDirectoriesForArtifact(downloadSpecification.directoryStructure);
+                core.info('Directory structure has been setup for the artifact');
+                yield utils_1.createEmptyFilesForArtifact(downloadSpecification.emptyFilesToCreate);
+                yield downloadHttpClient.downloadSingleArtifact(downloadSpecification.filesToDownload);
+            }
+            return {
+                artifactName: name,
+                downloadPath: downloadSpecification.rootDownloadLocation
+            };
+        });
+    }
+    downloadAllArtifacts(path) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const downloadHttpClient = new download_http_client_1.DownloadHttpClient();
+            const response = [];
+            const artifacts = yield downloadHttpClient.listArtifacts();
+            if (artifacts.count === 0) {
+                core.info('Unable to find any artifacts for the associated workflow');
+                return response;
+            }
+            if (!path) {
+                path = config_variables_1.getWorkSpaceDirectory();
+            }
+            path = path_1.normalize(path);
+            path = path_1.resolve(path);
+            let downloadedArtifacts = 0;
+            while (downloadedArtifacts < artifacts.count) {
+                const currentArtifactToDownload = artifacts.value[downloadedArtifacts];
+                downloadedArtifacts += 1;
+                // Get container entries for the specific artifact
+                const items = yield downloadHttpClient.getContainerItems(currentArtifactToDownload.name, currentArtifactToDownload.fileContainerResourceUrl);
+                const downloadSpecification = download_specification_1.getDownloadSpecification(currentArtifactToDownload.name, items.value, path, true);
+                if (downloadSpecification.filesToDownload.length === 0) {
+                    core.info(`No downloadable files were found for any artifact ${currentArtifactToDownload.name}`);
+                }
+                else {
+                    yield utils_1.createDirectoriesForArtifact(downloadSpecification.directoryStructure);
+                    yield utils_1.createEmptyFilesForArtifact(downloadSpecification.emptyFilesToCreate);
+                    yield downloadHttpClient.downloadSingleArtifact(downloadSpecification.filesToDownload);
+                }
+                response.push({
+                    artifactName: currentArtifactToDownload.name,
+                    downloadPath: downloadSpecification.rootDownloadLocation
+                });
+            }
+            return response;
+        });
+    }
+}
+exports.DefaultArtifactClient = DefaultArtifactClient;
+//# sourceMappingURL=artifact-client.js.map
+
+/***/ }),
+
+/***/ 255:
+/***/ (function(module, __unusedexports, __webpack_require__) {
+
+var wrappy = __webpack_require__(93)
+var reqs = Object.create(null)
+var once = __webpack_require__(619)
+
+module.exports = wrappy(inflight)
+
+function inflight (key, cb) {
+  if (reqs[key]) {
+    reqs[key].push(cb)
+    return null
+  } else {
+    reqs[key] = [cb]
+    return makeres(key)
+  }
+}
+
+function makeres (key) {
+  return once(function RES () {
+    var cbs = reqs[key]
+    var len = cbs.length
+    var args = slice(arguments)
+
+    // XXX It's somewhat ambiguous whether a new callback added in this
+    // pass should be queued for later execution if something in the
+    // list of callbacks throws, or if it should just be discarded.
+    // However, it's such an edge case that it hardly matters, and either
+    // choice is likely as surprising as the other.
+    // As it happens, we do go ahead and schedule it for later execution.
+    try {
+      for (var i = 0; i < len; i++) {
+        cbs[i].apply(null, args)
+      }
+    } finally {
+      if (cbs.length > len) {
+        // added more in the interim.
+        // de-zalgo, just in case, but don't call again.
+        cbs.splice(0, len)
+        process.nextTick(function () {
+          RES.apply(null, args)
+        })
+      } else {
+        delete reqs[key]
+      }
+    }
+  })
+}
+
+function slice (args) {
+  var length = args.length
+  var array = []
+
+  for (var i = 0; i < length; i++) array[i] = args[i]
+  return array
+}
+
+
+/***/ }),
+
+/***/ 270:
+/***/ (function(module) {
+
+module.exports = function (xs, fn) {
+    var res = [];
+    for (var i = 0; i < xs.length; i++) {
+        var x = fn(xs[i], i);
+        if (isArray(x)) res.push.apply(res, x);
+        else res.push(x);
+    }
+    return res;
+};
+
+var isArray = Array.isArray || function (xs) {
+    return Object.prototype.toString.call(xs) === '[object Array]';
+};
+
+
+/***/ }),
+
+/***/ 342:
+/***/ (function(__unusedmodule, exports, __webpack_require__) {
+
+"use strict";
+
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __importStar = (this && this.__importStar) || function (mod) {
+    if (mod && mod.__esModule) return mod;
+    var result = {};
+    if (mod != null) for (var k in mod) if (Object.hasOwnProperty.call(mod, k)) result[k] = mod[k];
+    result["default"] = mod;
+    return result;
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const fs = __importStar(__webpack_require__(747));
+const core = __importStar(__webpack_require__(211));
+const zlib = __importStar(__webpack_require__(761));
+const utils_1 = __webpack_require__(844);
+const url_1 = __webpack_require__(835);
+const status_reporter_1 = __webpack_require__(974);
+const perf_hooks_1 = __webpack_require__(630);
+const http_manager_1 = __webpack_require__(114);
+const config_variables_1 = __webpack_require__(706);
+class DownloadHttpClient {
+    constructor() {
+        this.downloadHttpManager = new http_manager_1.HttpManager(config_variables_1.getDownloadFileConcurrency());
+        // downloads are usually significantly faster than uploads so display status information every second
+        this.statusReporter = new status_reporter_1.StatusReporter(1000);
+    }
+    /**
+     * Gets a list of all artifacts that are in a specific container
+     */
+    listArtifacts() {
+        return __awaiter(this, void 0, void 0, function* () {
+            const artifactUrl = utils_1.getArtifactUrl();
+            // use the first client from the httpManager, `keep-alive` is not used so the connection will close immediately
+            const client = this.downloadHttpManager.getClient(0);
+            const headers = utils_1.getDownloadHeaders('application/json');
+            const response = yield client.get(artifactUrl, headers);
+            const body = yield response.readBody();
+            if (utils_1.isSuccessStatusCode(response.message.statusCode) && body) {
+                return JSON.parse(body);
+            }
+            utils_1.displayHttpDiagnostics(response);
+            throw new Error(`Unable to list artifacts for the run. Resource Url ${artifactUrl}`);
+        });
+    }
+    /**
+     * Fetches a set of container items that describe the contents of an artifact
+     * @param artifactName the name of the artifact
+     * @param containerUrl the artifact container URL for the run
+     */
+    getContainerItems(artifactName, containerUrl) {
+        return __awaiter(this, void 0, void 0, function* () {
+            // the itemPath search parameter controls which containers will be returned
+            const resourceUrl = new url_1.URL(containerUrl);
+            resourceUrl.searchParams.append('itemPath', artifactName);
+            // use the first client from the httpManager, `keep-alive` is not used so the connection will close immediately
+            const client = this.downloadHttpManager.getClient(0);
+            const headers = utils_1.getDownloadHeaders('application/json');
+            const response = yield client.get(resourceUrl.toString(), headers);
+            const body = yield response.readBody();
+            if (utils_1.isSuccessStatusCode(response.message.statusCode) && body) {
+                return JSON.parse(body);
+            }
+            utils_1.displayHttpDiagnostics(response);
+            throw new Error(`Unable to get ContainersItems from ${resourceUrl}`);
+        });
+    }
+    /**
+     * Concurrently downloads all the files that are part of an artifact
+     * @param downloadItems information about what items to download and where to save them
+     */
+    downloadSingleArtifact(downloadItems) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const DOWNLOAD_CONCURRENCY = config_variables_1.getDownloadFileConcurrency();
+            // limit the number of files downloaded at a single time
+            core.debug(`Download file concurrency is set to ${DOWNLOAD_CONCURRENCY}`);
+            const parallelDownloads = [...new Array(DOWNLOAD_CONCURRENCY).keys()];
+            let currentFile = 0;
+            let downloadedFiles = 0;
+            core.info(`Total number of files that will be downloaded: ${downloadItems.length}`);
+            this.statusReporter.setTotalNumberOfFilesToProcess(downloadItems.length);
+            this.statusReporter.start();
+            yield Promise.all(parallelDownloads.map((index) => __awaiter(this, void 0, void 0, function* () {
+                while (currentFile < downloadItems.length) {
+                    const currentFileToDownload = downloadItems[currentFile];
+                    currentFile += 1;
+                    const startTime = perf_hooks_1.performance.now();
+                    yield this.downloadIndividualFile(index, currentFileToDownload.sourceLocation, currentFileToDownload.targetPath);
+                    if (core.isDebug()) {
+                        core.debug(`File: ${++downloadedFiles}/${downloadItems.length}. ${currentFileToDownload.targetPath} took ${(perf_hooks_1.performance.now() - startTime).toFixed(3)} milliseconds to finish downloading`);
+                    }
+                    this.statusReporter.incrementProcessedCount();
+                }
+            })))
+                .catch(error => {
+                throw new Error(`Unable to download the artifact: ${error}`);
+            })
+                .finally(() => {
+                this.statusReporter.stop();
+                // safety dispose all connections
+                this.downloadHttpManager.disposeAndReplaceAllClients();
+            });
+        });
+    }
+    /**
+     * Downloads an individual file
+     * @param httpClientIndex the index of the http client that is used to make all of the calls
+     * @param artifactLocation origin location where a file will be downloaded from
+     * @param downloadPath destination location for the file being downloaded
+     */
+    downloadIndividualFile(httpClientIndex, artifactLocation, downloadPath) {
+        return __awaiter(this, void 0, void 0, function* () {
+            let retryCount = 0;
+            const retryLimit = config_variables_1.getRetryLimit();
+            const destinationStream = fs.createWriteStream(downloadPath);
+            const headers = utils_1.getDownloadHeaders('application/json', true, true);
+            // a single GET request is used to download a file
+            const makeDownloadRequest = () => __awaiter(this, void 0, void 0, function* () {
+                const client = this.downloadHttpManager.getClient(httpClientIndex);
+                return yield client.get(artifactLocation, headers);
+            });
+            // check the response headers to determine if the file was compressed using gzip
+            const isGzip = (incomingHeaders) => {
+                return ('content-encoding' in incomingHeaders &&
+                    incomingHeaders['content-encoding'] === 'gzip');
+            };
+            // Increments the current retry count and then checks if the retry limit has been reached
+            // If there have been too many retries, fail so the download stops. If there is a retryAfterValue value provided,
+            // it will be used
+            const backOff = (retryAfterValue) => __awaiter(this, void 0, void 0, function* () {
+                retryCount++;
+                if (retryCount > retryLimit) {
+                    return Promise.reject(new Error(`Retry limit has been reached. Unable to download ${artifactLocation}`));
+                }
+                else {
+                    this.downloadHttpManager.disposeAndReplaceClient(httpClientIndex);
+                    if (retryAfterValue) {
+                        // Back off by waiting the specified time denoted by the retry-after header
+                        core.info(`Backoff due to too many requests, retry #${retryCount}. Waiting for ${retryAfterValue} milliseconds before continuing the download`);
+                        yield new Promise(resolve => setTimeout(resolve, retryAfterValue));
+                    }
+                    else {
+                        // Back off using an exponential value that depends on the retry count
+                        const backoffTime = utils_1.getExponentialRetryTimeInMilliseconds(retryCount);
+                        core.info(`Exponential backoff for retry #${retryCount}. Waiting for ${backoffTime} milliseconds before continuing the download`);
+                        yield new Promise(resolve => setTimeout(resolve, backoffTime));
+                    }
+                    core.info(`Finished backoff for retry #${retryCount}, continuing with download`);
+                }
+            });
+            // keep trying to download a file until a retry limit has been reached
+            while (retryCount <= retryLimit) {
+                let response;
+                try {
+                    response = yield makeDownloadRequest();
+                }
+                catch (error) {
+                    // if an error is caught, it is usually indicative of a timeout so retry the download
+                    core.info('An error occurred while attempting to download a file');
+                    // eslint-disable-next-line no-console
+                    console.log(error);
+                    // increment the retryCount and use exponential backoff to wait before making the next request
+                    yield backOff();
+                    continue;
+                }
+                if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
+                    // The body contains the contents of the file however calling response.readBody() causes all the content to be converted to a string
+                    // which can cause some gzip encoded data to be lost
+                    // Instead of using response.readBody(), response.message is a readableStream that can be directly used to get the raw body contents
+                    return this.pipeResponseToFile(response, destinationStream, isGzip(response.message.headers));
+                }
+                else if (utils_1.isRetryableStatusCode(response.message.statusCode)) {
+                    core.info(`A ${response.message.statusCode} response code has been received while attempting to download an artifact`);
+                    // if a throttled status code is received, try to get the retryAfter header value, else differ to standard exponential backoff
+                    utils_1.isThrottledStatusCode(response.message.statusCode)
+                        ? yield backOff(utils_1.tryGetRetryAfterValueTimeInMilliseconds(response.message.headers))
+                        : yield backOff();
+                }
+                else {
+                    // Some unexpected response code, fail immediately and stop the download
+                    utils_1.displayHttpDiagnostics(response);
+                    return Promise.reject(new Error(`Unexpected http ${response.message.statusCode} during download for ${artifactLocation}`));
+                }
+            }
+        });
+    }
+    /**
+     * Pipes the response from downloading an individual file to the appropriate destination stream while decoding gzip content if necessary
+     * @param response the http response received when downloading a file
+     * @param destinationStream the stream where the file should be written to
+     * @param isGzip a boolean denoting if the content is compressed using gzip and if we need to decode it
+     */
+    pipeResponseToFile(response, destinationStream, isGzip) {
+        return __awaiter(this, void 0, void 0, function* () {
+            yield new Promise((resolve, reject) => {
+                if (isGzip) {
+                    const gunzip = zlib.createGunzip();
+                    response.message
+                        .pipe(gunzip)
+                        .pipe(destinationStream)
+                        .on('close', () => {
+                        resolve();
+                    })
+                        .on('error', error => {
+                        core.error(`An error has been encountered while decompressing and writing a downloaded file to ${destinationStream.path}`);
+                        reject(error);
+                    });
+                }
+                else {
+                    response.message
+                        .pipe(destinationStream)
+                        .on('close', () => {
+                        resolve();
+                    })
+                        .on('error', error => {
+                        core.error(`An error has been encountered while writing a downloaded file to ${destinationStream.path}`);
+                        reject(error);
+                    });
+                }
+            });
+            return;
+        });
+    }
+}
+exports.DownloadHttpClient = DownloadHttpClient;
+//# sourceMappingURL=download-http-client.js.map
+
+/***/ }),
+
+/***/ 357:
+/***/ (function(module) {
+
+module.exports = require("assert");
+
+/***/ }),
+
+/***/ 365:
 /***/ (function(module, __unusedexports, __webpack_require__) {
 
 /*!
@@ -2543,7 +2818,7 @@ const crypto = __webpack_require__(417);
 const _c = fs.constants && os.constants ?
   { fs: fs.constants, os: os.constants } :
   process.binding('constants');
-const rimraf = __webpack_require__(300);
+const rimraf = __webpack_require__(159);
 
 /*
  * The working inner variables.
@@ -3291,247 +3566,6 @@ module.exports.setGracefulCleanup = setGracefulCleanup;
 
 /***/ }),
 
-/***/ 342:
-/***/ (function(__unusedmodule, exports, __webpack_require__) {
-
-"use strict";
-
-var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
-    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
-    return new (P || (P = Promise))(function (resolve, reject) {
-        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
-        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
-        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
-        step((generator = generator.apply(thisArg, _arguments || [])).next());
-    });
-};
-var __importStar = (this && this.__importStar) || function (mod) {
-    if (mod && mod.__esModule) return mod;
-    var result = {};
-    if (mod != null) for (var k in mod) if (Object.hasOwnProperty.call(mod, k)) result[k] = mod[k];
-    result["default"] = mod;
-    return result;
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-const fs = __importStar(__webpack_require__(747));
-const core = __importStar(__webpack_require__(211));
-const zlib = __importStar(__webpack_require__(761));
-const utils_1 = __webpack_require__(844);
-const url_1 = __webpack_require__(835);
-const status_reporter_1 = __webpack_require__(974);
-const perf_hooks_1 = __webpack_require__(630);
-const http_manager_1 = __webpack_require__(114);
-const config_variables_1 = __webpack_require__(706);
-class DownloadHttpClient {
-    constructor() {
-        this.downloadHttpManager = new http_manager_1.HttpManager(config_variables_1.getDownloadFileConcurrency());
-        // downloads are usually significantly faster than uploads so display status information every second
-        this.statusReporter = new status_reporter_1.StatusReporter(1000);
-    }
-    /**
-     * Gets a list of all artifacts that are in a specific container
-     */
-    listArtifacts() {
-        return __awaiter(this, void 0, void 0, function* () {
-            const artifactUrl = utils_1.getArtifactUrl();
-            const client = this.downloadHttpManager.getClient(0);
-            const headers = utils_1.getDownloadHeaders('application/json', true);
-            const response = yield client.get(artifactUrl, headers);
-            const body = yield response.readBody();
-            if (utils_1.isSuccessStatusCode(response.message.statusCode) && body) {
-                return JSON.parse(body);
-            }
-            utils_1.displayHttpDiagnostics(response);
-            throw new Error(`Unable to list artifacts for the run. Resource Url ${artifactUrl}`);
-        });
-    }
-    /**
-     * Fetches a set of container items that describe the contents of an artifact
-     * @param artifactName the name of the artifact
-     * @param containerUrl the artifact container URL for the run
-     */
-    getContainerItems(artifactName, containerUrl) {
-        return __awaiter(this, void 0, void 0, function* () {
-            // the itemPath search parameter controls which containers will be returned
-            const resourceUrl = new url_1.URL(containerUrl);
-            resourceUrl.searchParams.append('itemPath', artifactName);
-            const client = this.downloadHttpManager.getClient(0);
-            const headers = utils_1.getDownloadHeaders('application/json', true);
-            const response = yield client.get(resourceUrl.toString(), headers);
-            const body = yield response.readBody();
-            if (utils_1.isSuccessStatusCode(response.message.statusCode) && body) {
-                return JSON.parse(body);
-            }
-            utils_1.displayHttpDiagnostics(response);
-            throw new Error(`Unable to get ContainersItems from ${resourceUrl}`);
-        });
-    }
-    /**
-     * Concurrently downloads all the files that are part of an artifact
-     * @param downloadItems information about what items to download and where to save them
-     */
-    downloadSingleArtifact(downloadItems) {
-        return __awaiter(this, void 0, void 0, function* () {
-            const DOWNLOAD_CONCURRENCY = config_variables_1.getDownloadFileConcurrency();
-            // limit the number of files downloaded at a single time
-            core.debug(`Download file concurrency is set to ${DOWNLOAD_CONCURRENCY}`);
-            const parallelDownloads = [...new Array(DOWNLOAD_CONCURRENCY).keys()];
-            let currentFile = 0;
-            let downloadedFiles = 0;
-            core.info(`Total number of files that will be downloaded: ${downloadItems.length}`);
-            this.statusReporter.setTotalNumberOfFilesToProcess(downloadItems.length);
-            this.statusReporter.start();
-            yield Promise.all(parallelDownloads.map((index) => __awaiter(this, void 0, void 0, function* () {
-                while (currentFile < downloadItems.length) {
-                    const currentFileToDownload = downloadItems[currentFile];
-                    currentFile += 1;
-                    const startTime = perf_hooks_1.performance.now();
-                    yield this.downloadIndividualFile(index, currentFileToDownload.sourceLocation, currentFileToDownload.targetPath);
-                    if (core.isDebug()) {
-                        core.debug(`File: ${++downloadedFiles}/${downloadItems.length}. ${currentFileToDownload.targetPath} took ${(perf_hooks_1.performance.now() - startTime).toFixed(3)} milliseconds to finish downloading`);
-                    }
-                    this.statusReporter.incrementProcessedCount();
-                }
-            })))
-                .catch(error => {
-                throw new Error(`Unable to download the artifact: ${error}`);
-            })
-                .finally(() => {
-                this.statusReporter.stop();
-            });
-        });
-    }
-    /**
-     * Downloads an individual file
-     * @param httpClientIndex the index of the http client that is used to make all of the calls
-     * @param artifactLocation origin location where a file will be downloaded from
-     * @param downloadPath destination location for the file being downloaded
-     */
-    downloadIndividualFile(httpClientIndex, artifactLocation, downloadPath) {
-        return __awaiter(this, void 0, void 0, function* () {
-            let retryCount = 0;
-            const retryLimit = config_variables_1.getRetryLimit();
-            const destinationStream = fs.createWriteStream(downloadPath);
-            const headers = utils_1.getDownloadHeaders('application/json', true, true);
-            // a single GET request is used to download a file
-            const makeDownloadRequest = () => __awaiter(this, void 0, void 0, function* () {
-                const client = this.downloadHttpManager.getClient(httpClientIndex);
-                return yield client.get(artifactLocation, headers);
-            });
-            // check the response headers to determine if the file was compressed using gzip
-            const isGzip = (incomingHeaders) => {
-                return ('content-encoding' in incomingHeaders &&
-                    incomingHeaders['content-encoding'] === 'gzip');
-            };
-            // Increments the current retry count and then checks if the retry limit has been reached
-            // If there have been too many retries, fail so the download stops. If there is a retryAfterValue value provided,
-            // it will be used
-            const backOff = (retryAfterValue) => __awaiter(this, void 0, void 0, function* () {
-                retryCount++;
-                if (retryCount > retryLimit) {
-                    return Promise.reject(new Error(`Retry limit has been reached. Unable to download ${artifactLocation}`));
-                }
-                else {
-                    if (retryAfterValue) {
-                        // Back off by waiting the specified time denoted by the retry-after header
-                        core.info(`Backoff due to too many requests, retry #${retryCount}. Waiting for ${retryAfterValue} milliseconds before continuing the download`);
-                        yield new Promise(resolve => setTimeout(resolve, retryAfterValue));
-                    }
-                    else {
-                        // Back off using an exponential value that depends on the retry count
-                        const backoffTime = utils_1.getExponentialRetryTimeInMilliseconds(retryCount);
-                        core.info(`Exponential backoff for retry #${retryCount}. Waiting for ${backoffTime} milliseconds before continuing the download`);
-                        yield new Promise(resolve => setTimeout(resolve, backoffTime));
-                    }
-                    core.info(`Finished backoff for retry #${retryCount}, continuing with download`);
-                }
-            });
-            // keep trying to download a file until a retry limit has been reached
-            while (retryCount <= retryLimit) {
-                let response;
-                try {
-                    response = yield makeDownloadRequest();
-                }
-                catch (error) {
-                    // if an error is caught, it is usually indicative of a timeout so retry the download
-                    core.info('An error occurred while attempting to download a file');
-                    // eslint-disable-next-line no-console
-                    console.log(error);
-                    // increment the retryCount and use exponential backoff to wait before making the next request
-                    yield backOff();
-                    continue;
-                }
-                if (utils_1.isSuccessStatusCode(response.message.statusCode)) {
-                    // The body contains the contents of the file however calling response.readBody() causes all the content to be converted to a string
-                    // which can cause some gzip encoded data to be lost
-                    // Instead of using response.readBody(), response.message is a readableStream that can be directly used to get the raw body contents
-                    return this.pipeResponseToFile(response, destinationStream, isGzip(response.message.headers));
-                }
-                else if (utils_1.isRetryableStatusCode(response.message.statusCode)) {
-                    core.info(`A ${response.message.statusCode} response code has been received while attempting to download an artifact`);
-                    // if a throttled status code is received, try to get the retryAfter header value, else differ to standard exponential backoff
-                    utils_1.isThrottledStatusCode(response.message.statusCode)
-                        ? yield backOff(utils_1.tryGetRetryAfterValueTimeInMilliseconds(response.message.headers))
-                        : yield backOff();
-                }
-                else {
-                    // Some unexpected response code, fail immediately and stop the download
-                    utils_1.displayHttpDiagnostics(response);
-                    return Promise.reject(new Error(`Unexpected http ${response.message.statusCode} during download for ${artifactLocation}`));
-                }
-            }
-        });
-    }
-    /**
-     * Pipes the response from downloading an individual file to the appropriate destination stream while decoding gzip content if necessary
-     * @param response the http response received when downloading a file
-     * @param destinationStream the stream where the file should be written to
-     * @param isGzip a boolean denoting if the content is compressed using gzip and if we need to decode it
-     */
-    pipeResponseToFile(response, destinationStream, isGzip) {
-        return __awaiter(this, void 0, void 0, function* () {
-            yield new Promise((resolve, reject) => {
-                if (isGzip) {
-                    const gunzip = zlib.createGunzip();
-                    response.message
-                        .pipe(gunzip)
-                        .pipe(destinationStream)
-                        .on('close', () => {
-                        resolve();
-                    })
-                        .on('error', error => {
-                        core.error(`An error has been encountered while decompressing and writing a downloaded file to ${destinationStream.path}`);
-                        reject(error);
-                    });
-                }
-                else {
-                    response.message
-                        .pipe(destinationStream)
-                        .on('close', () => {
-                        resolve();
-                    })
-                        .on('error', error => {
-                        core.error(`An error has been encountered while writing a downloaded file to ${destinationStream.path}`);
-                        reject(error);
-                    });
-                }
-            });
-            return;
-        });
-    }
-}
-exports.DownloadHttpClient = DownloadHttpClient;
-//# sourceMappingURL=download-http-client.js.map
-
-/***/ }),
-
-/***/ 357:
-/***/ (function(module) {
-
-module.exports = require("assert");
-
-/***/ }),
-
 /***/ 368:
 /***/ (function(module, __unusedexports, __webpack_require__) {
 
@@ -3651,7 +3685,7 @@ function escapeProperty(s) {
 /***/ (function(module, __unusedexports, __webpack_require__) {
 
 const {promisify} = __webpack_require__(669);
-const tmp = __webpack_require__(317);
+const tmp = __webpack_require__(365);
 
 // file
 module.exports.fileSync = tmp.fileSync;
@@ -3978,14 +4012,28 @@ class Command {
         return cmdStr;
     }
 }
+/**
+ * Sanitizes an input into a string so it can be passed into issueCommand safely
+ * @param input input to sanitize into a string
+ */
+function toCommandValue(input) {
+    if (input === null || input === undefined) {
+        return '';
+    }
+    else if (typeof input === 'string' || input instanceof String) {
+        return input;
+    }
+    return JSON.stringify(input);
+}
+exports.toCommandValue = toCommandValue;
 function escapeData(s) {
-    return (s || '')
+    return toCommandValue(s)
         .replace(/%/g, '%25')
         .replace(/\r/g, '%0D')
         .replace(/\n/g, '%0A');
 }
 function escapeProperty(s) {
-    return (s || '')
+    return toCommandValue(s)
         .replace(/%/g, '%25')
         .replace(/\r/g, '%0D')
         .replace(/\n/g, '%0A')
@@ -4767,12 +4815,10 @@ function getProxyUrl(reqUrl) {
     }
     let proxyVar;
     if (usingSsl) {
-        proxyVar = process.env["https_proxy"] ||
-            process.env["HTTPS_PROXY"];
+        proxyVar = process.env['https_proxy'] || process.env['HTTPS_PROXY'];
     }
     else {
-        proxyVar = process.env["http_proxy"] ||
-            process.env["HTTP_PROXY"];
+        proxyVar = process.env['http_proxy'] || process.env['HTTP_PROXY'];
     }
     if (proxyVar) {
         proxyUrl = url.parse(proxyVar);
@@ -4784,7 +4830,7 @@ function checkBypass(reqUrl) {
     if (!reqUrl.hostname) {
         return false;
     }
-    let noProxy = process.env["no_proxy"] || process.env["NO_PROXY"] || '';
+    let noProxy = process.env['no_proxy'] || process.env['NO_PROXY'] || '';
     if (!noProxy) {
         return false;
     }
@@ -4805,7 +4851,10 @@ function checkBypass(reqUrl) {
         upperReqHosts.push(`${upperReqHosts[0]}:${reqPort}`);
     }
     // Compare request host against noproxy
-    for (let upperNoProxyItem of noProxy.split(',').map(x => x.trim().toUpperCase()).filter(x => x)) {
+    for (let upperNoProxyItem of noProxy
+        .split(',')
+        .map(x => x.trim().toUpperCase())
+        .filter(x => x)) {
         if (upperReqHosts.some(x => x === upperNoProxyItem)) {
             return true;
         }
@@ -4967,8 +5016,7 @@ function isRetryableStatusCode(statusCode) {
         http_client_1.HttpCodes.BadGateway,
         http_client_1.HttpCodes.ServiceUnavailable,
         http_client_1.HttpCodes.GatewayTimeout,
-        http_client_1.HttpCodes.TooManyRequests,
-        http_client_1.HttpCodes.InternalServerError
+        http_client_1.HttpCodes.TooManyRequests
     ];
     return retryableStatusCodes.includes(statusCode);
 }
@@ -5018,25 +5066,25 @@ exports.getContentRange = getContentRange;
  * @returns appropriate request options to make a specific http call during artifact download
  */
 function getDownloadHeaders(contentType, isKeepAlive, acceptGzip) {
-    const headers = {};
+    const requestOptions = {};
     if (contentType) {
-        headers['Content-Type'] = contentType;
+        requestOptions['Content-Type'] = contentType;
     }
     if (isKeepAlive) {
-        headers['Connection'] = 'Keep-Alive';
+        requestOptions['Connection'] = 'Keep-Alive';
         // keep alive for at least 10 seconds before closing the connection
-        headers['Keep-Alive'] = '10';
+        requestOptions['Keep-Alive'] = '10';
     }
     if (acceptGzip) {
         // if we are expecting a response with gzip encoding, it should be using an octet-stream in the accept header
-        headers['Accept-Encoding'] = 'gzip';
-        headers['Accept'] = `application/octet-stream;api-version=${getApiVersion()}`;
+        requestOptions['Accept-Encoding'] = 'gzip';
+        requestOptions['Accept'] = `application/octet-stream;api-version=${getApiVersion()}`;
     }
     else {
         // default to application/json if we are not working with gzip content
-        headers['Accept'] = `application/json;api-version=${getApiVersion()}`;
+        requestOptions['Accept'] = `application/json;api-version=${getApiVersion()}`;
     }
-    return headers;
+    return requestOptions;
 }
 exports.getDownloadHeaders = getDownloadHeaders;
 /**
@@ -5047,44 +5095,36 @@ exports.getDownloadHeaders = getDownloadHeaders;
  * @param {number} uncompressedLength the original size of the content if something is being uploaded that has been compressed
  * @param {number} contentLength the length of the content that is being uploaded
  * @param {string} contentRange the range of the content that is being uploaded
- * @returns appropriate request headers to make a specific http call during artifact upload
+ * @returns appropriate request options to make a specific http call during artifact upload
  */
 function getUploadHeaders(contentType, isKeepAlive, isGzip, uncompressedLength, contentLength, contentRange) {
-    const headers = {};
-    headers['Accept'] = `application/json;api-version=${getApiVersion()}`;
+    const requestOptions = {};
+    requestOptions['Accept'] = `application/json;api-version=${getApiVersion()}`;
     if (contentType) {
-        headers['Content-Type'] = contentType;
+        requestOptions['Content-Type'] = contentType;
     }
     if (isKeepAlive) {
-        headers['Connection'] = 'Keep-Alive';
+        requestOptions['Connection'] = 'Keep-Alive';
         // keep alive for at least 10 seconds before closing the connection
-        headers['Keep-Alive'] = '10';
+        requestOptions['Keep-Alive'] = '10';
     }
     if (isGzip) {
-        headers['Content-Encoding'] = 'gzip';
-        headers['x-tfs-filelength'] = uncompressedLength;
+        requestOptions['Content-Encoding'] = 'gzip';
+        requestOptions['x-tfs-filelength'] = uncompressedLength;
     }
     if (contentLength) {
-        headers['Content-Length'] = contentLength;
+        requestOptions['Content-Length'] = contentLength;
     }
     if (contentRange) {
-        headers['Content-Range'] = contentRange;
+        requestOptions['Content-Range'] = contentRange;
     }
-    return headers;
+    return requestOptions;
 }
 exports.getUploadHeaders = getUploadHeaders;
-/**
- * Creates a new http client that is used by the http-managers when making calls to either upload or download an artifact
- */
 function createHttpClient() {
-    const requestOptions = {
-        // headers get set individually before each call as they can vary significantly
-        headers: [],
-        // keep alive is configured at the http-client level and is used by each client when making calls, this is independent
-        // of the keep-alive header that is used to let the remove server know how the connection should be treated
-        keepAlive: true
-    };
-    return new http_client_1.HttpClient('actions/artifact', [new auth_1.BearerCredentialHandler(config_variables_1.getRuntimeToken())], requestOptions);
+    return new http_client_1.HttpClient('actions/artifact', [
+        new auth_1.BearerCredentialHandler(config_variables_1.getRuntimeToken())
+    ]);
 }
 exports.createHttpClient = createHttpClient;
 function getArtifactUrl() {
@@ -7355,8 +7395,18 @@ function getProxyUrl(serverUrl) {
     return proxyUrl ? proxyUrl.href : '';
 }
 exports.getProxyUrl = getProxyUrl;
-const HttpRedirectCodes = [HttpCodes.MovedPermanently, HttpCodes.ResourceMoved, HttpCodes.SeeOther, HttpCodes.TemporaryRedirect, HttpCodes.PermanentRedirect];
-const HttpResponseRetryCodes = [HttpCodes.BadGateway, HttpCodes.ServiceUnavailable, HttpCodes.GatewayTimeout];
+const HttpRedirectCodes = [
+    HttpCodes.MovedPermanently,
+    HttpCodes.ResourceMoved,
+    HttpCodes.SeeOther,
+    HttpCodes.TemporaryRedirect,
+    HttpCodes.PermanentRedirect
+];
+const HttpResponseRetryCodes = [
+    HttpCodes.BadGateway,
+    HttpCodes.ServiceUnavailable,
+    HttpCodes.GatewayTimeout
+];
 const RetryableHttpVerbs = ['OPTIONS', 'GET', 'DELETE', 'HEAD'];
 const ExponentialBackoffCeiling = 10;
 const ExponentialBackoffTimeSlice = 5;
@@ -7481,18 +7531,22 @@ class HttpClient {
      */
     async request(verb, requestUrl, data, headers) {
         if (this._disposed) {
-            throw new Error("Client has already been disposed.");
+            throw new Error('Client has already been disposed.');
         }
         let parsedUrl = url.parse(requestUrl);
         let info = this._prepareRequest(verb, parsedUrl, headers);
         // Only perform retries on reads since writes may not be idempotent.
-        let maxTries = (this._allowRetries && RetryableHttpVerbs.indexOf(verb) != -1) ? this._maxRetries + 1 : 1;
+        let maxTries = this._allowRetries && RetryableHttpVerbs.indexOf(verb) != -1
+            ? this._maxRetries + 1
+            : 1;
         let numTries = 0;
         let response;
         while (numTries < maxTries) {
             response = await this.requestRaw(info, data);
             // Check if it's an authentication challenge
-            if (response && response.message && response.message.statusCode === HttpCodes.Unauthorized) {
+            if (response &&
+                response.message &&
+                response.message.statusCode === HttpCodes.Unauthorized) {
                 let authenticationHandler;
                 for (let i = 0; i < this.handlers.length; i++) {
                     if (this.handlers[i].canHandleAuthentication(response)) {
@@ -7510,21 +7564,32 @@ class HttpClient {
                 }
             }
             let redirectsRemaining = this._maxRedirects;
-            while (HttpRedirectCodes.indexOf(response.message.statusCode) != -1
-                && this._allowRedirects
-                && redirectsRemaining > 0) {
-                const redirectUrl = response.message.headers["location"];
+            while (HttpRedirectCodes.indexOf(response.message.statusCode) != -1 &&
+                this._allowRedirects &&
+                redirectsRemaining > 0) {
+                const redirectUrl = response.message.headers['location'];
                 if (!redirectUrl) {
                     // if there's no location to redirect to, we won't
                     break;
                 }
                 let parsedRedirectUrl = url.parse(redirectUrl);
-                if (parsedUrl.protocol == 'https:' && parsedUrl.protocol != parsedRedirectUrl.protocol && !this._allowRedirectDowngrade) {
-                    throw new Error("Redirect from HTTPS to HTTP protocol. This downgrade is not allowed for security reasons. If you want to allow this behavior, set the allowRedirectDowngrade option to true.");
+                if (parsedUrl.protocol == 'https:' &&
+                    parsedUrl.protocol != parsedRedirectUrl.protocol &&
+                    !this._allowRedirectDowngrade) {
+                    throw new Error('Redirect from HTTPS to HTTP protocol. This downgrade is not allowed for security reasons. If you want to allow this behavior, set the allowRedirectDowngrade option to true.');
                 }
                 // we need to finish reading the response before reassigning response
                 // which will leak the open socket.
                 await response.readBody();
+                // strip authorization header if redirected to a different hostname
+                if (parsedRedirectUrl.hostname !== parsedUrl.hostname) {
+                    for (let header in headers) {
+                        // header names are case insensitive
+                        if (header.toLowerCase() === 'authorization') {
+                            delete headers[header];
+                        }
+                    }
+                }
                 // let's make the request with the new redirectUrl
                 info = this._prepareRequest(verb, parsedRedirectUrl, headers);
                 response = await this.requestRaw(info, data);
@@ -7575,8 +7640,8 @@ class HttpClient {
      */
     requestRawWithCallback(info, data, onResult) {
         let socket;
-        if (typeof (data) === 'string') {
-            info.options.headers["Content-Length"] = Buffer.byteLength(data, 'utf8');
+        if (typeof data === 'string') {
+            info.options.headers['Content-Length'] = Buffer.byteLength(data, 'utf8');
         }
         let callbackCalled = false;
         let handleResult = (err, res) => {
@@ -7589,7 +7654,7 @@ class HttpClient {
             let res = new HttpClientResponse(msg);
             handleResult(null, res);
         });
-        req.on('socket', (sock) => {
+        req.on('socket', sock => {
             socket = sock;
         });
         // If we ever get disconnected, we want the socket to timeout eventually
@@ -7604,10 +7669,10 @@ class HttpClient {
             // res should have headers
             handleResult(err, null);
         });
-        if (data && typeof (data) === 'string') {
+        if (data && typeof data === 'string') {
             req.write(data, 'utf8');
         }
-        if (data && typeof (data) !== 'string') {
+        if (data && typeof data !== 'string') {
             data.on('close', function () {
                 req.end();
             });
@@ -7634,31 +7699,34 @@ class HttpClient {
         const defaultPort = usingSsl ? 443 : 80;
         info.options = {};
         info.options.host = info.parsedUrl.hostname;
-        info.options.port = info.parsedUrl.port ? parseInt(info.parsedUrl.port) : defaultPort;
-        info.options.path = (info.parsedUrl.pathname || '') + (info.parsedUrl.search || '');
+        info.options.port = info.parsedUrl.port
+            ? parseInt(info.parsedUrl.port)
+            : defaultPort;
+        info.options.path =
+            (info.parsedUrl.pathname || '') + (info.parsedUrl.search || '');
         info.options.method = method;
         info.options.headers = this._mergeHeaders(headers);
         if (this.userAgent != null) {
-            info.options.headers["user-agent"] = this.userAgent;
+            info.options.headers['user-agent'] = this.userAgent;
         }
         info.options.agent = this._getAgent(info.parsedUrl);
         // gives handlers an opportunity to participate
         if (this.handlers) {
-            this.handlers.forEach((handler) => {
+            this.handlers.forEach(handler => {
                 handler.prepareRequest(info.options);
             });
         }
         return info;
     }
     _mergeHeaders(headers) {
-        const lowercaseKeys = obj => Object.keys(obj).reduce((c, k) => (c[k.toLowerCase()] = obj[k], c), {});
+        const lowercaseKeys = obj => Object.keys(obj).reduce((c, k) => ((c[k.toLowerCase()] = obj[k]), c), {});
         if (this.requestOptions && this.requestOptions.headers) {
             return Object.assign({}, lowercaseKeys(this.requestOptions.headers), lowercaseKeys(headers));
         }
         return lowercaseKeys(headers || {});
     }
     _getExistingOrDefaultHeader(additionalHeaders, header, _default) {
-        const lowercaseKeys = obj => Object.keys(obj).reduce((c, k) => (c[k.toLowerCase()] = obj[k], c), {});
+        const lowercaseKeys = obj => Object.keys(obj).reduce((c, k) => ((c[k.toLowerCase()] = obj[k]), c), {});
         let clientHeader;
         if (this.requestOptions && this.requestOptions.headers) {
             clientHeader = lowercaseKeys(this.requestOptions.headers)[header];
@@ -7696,7 +7764,7 @@ class HttpClient {
                     proxyAuth: proxyUrl.auth,
                     host: proxyUrl.hostname,
                     port: proxyUrl.port
-                },
+                }
             };
             let tunnelAgent;
             const overHttps = proxyUrl.protocol === 'https:';
@@ -7723,7 +7791,9 @@ class HttpClient {
             // we don't want to set NODE_TLS_REJECT_UNAUTHORIZED=0 since that will affect request for entire process
             // http.RequestOptions doesn't expose a way to modify RequestOptions.agent.options
             // we have to cast it to any and change it directly
-            agent.options = Object.assign(agent.options || {}, { rejectUnauthorized: false });
+            agent.options = Object.assign(agent.options || {}, {
+                rejectUnauthorized: false
+            });
         }
         return agent;
     }
@@ -7784,7 +7854,7 @@ class HttpClient {
                     msg = contents;
                 }
                 else {
-                    msg = "Failed request: (" + statusCode + ")";
+                    msg = 'Failed request: (' + statusCode + ')';
                 }
                 let err = new Error(msg);
                 // attach statusCode and body obj (if available) to the error object
